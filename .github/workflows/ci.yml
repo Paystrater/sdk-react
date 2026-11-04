@@ -1,0 +1,27 @@
+# Every push and pull request: types, the network rule, tests, the build, the
+# size budgets, publint, arethetypeswrong and npm pack
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # The registry signatures and provenance of every installed package
+      - run: npm audit signatures
+      - run: npm run check
+      # Types are generated from the published spec; a field change must come with a regenerated file
+      - run: npm run types && git diff --exit-code src/core/generated

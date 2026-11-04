@@ -1,0 +1,118 @@
+{
+  "name": "@paystrater/react",
+  "version": "0.1.0-next.0",
+  "description": "Paystrater checkout for React: one component and one hook for Pay with Paystrater, Transfer to Pay and agent payments.",
+  "license": "MIT",
+  "author": "Paystrater",
+  "homepage": "https://docs.paystrater.com/docs/sdks/react",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Paystrater/sdk-react.git"
+  },
+  "bugs": "https://github.com/Paystrater/sdk-react/issues",
+  "keywords": [
+    "paystrater",
+    "checkout",
+    "payments",
+    "stablecoin",
+    "react"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/types/react/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "core": [
+        "./dist/cjs/types/core/index.d.ts"
+      ],
+      "hosted": [
+        "./dist/cjs/types/hosted/index.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/types/react/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/types/react/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./core": {
+      "import": {
+        "types": "./dist/esm/types/core/index.d.ts",
+        "default": "./dist/esm/core.js"
+      },
+      "require": {
+        "types": "./dist/cjs/types/core/index.d.ts",
+        "default": "./dist/cjs/core.js"
+      }
+    },
+    "./hosted": {
+      "import": {
+        "types": "./dist/esm/types/hosted/index.d.ts",
+        "default": "./dist/esm/hosted.js"
+      },
+      "require": {
+        "types": "./dist/cjs/types/hosted/index.d.ts",
+        "default": "./dist/cjs/hosted.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@changesets/cli": "3.0.3",
+    "@noble/secp256k1": "3.2.0",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
+    "jsdom": "30.1.3",
+    "openapi-typescript": "7.13.0",
+    "publint": "0.3.25",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  },
+  "overrides": {
+    "@redocly/openapi-core": {
+      "minimatch": "11.0.4"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "size": "node scripts/size.mjs",
+    "types": "node scripts/types.mjs",
+    "lint:package": "publint && attw --pack .",
+    "check": "npm run typecheck && npm run check:network && npm test && npm run build && npm run size && npm run lint:package && npm run pack:check",
+    "check:network": "node scripts/check-network.mjs",
+    "vector": "node scripts/make-vector.mjs",
+    "verify-vector": "scripts/verify-vector/run.sh",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "pack:check": "npm pack --dry-run"
+  }
+}

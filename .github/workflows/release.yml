@@ -1,0 +1,44 @@
+# Publishes to npm from a version tag: trusted publishing over
+# OIDC, so no npm token lives in GitHub, and provenance on every release. A
+# pre-release version (0.1.0-next.0) goes to the "next" tag; a plain version to
+# "latest". Versions come from Changesets (see PUBLISHING.md).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      # Staged publishing needs npm 11.15.0 or later
+      - run: npm install -g npm@11.15.0
+      - run: npm ci
+      - run: npm audit signatures
+      - run: npm run check
+      - name: The tag matches package.json
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - name: Publish
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          case "$version" in
+            *-*) tag=next ;;
+            *) tag=latest ;;
+          esac
+          # Staged: the version goes live only after a maintainer approves it
+          # with 2FA on npmjs.com (Staged Packages tab)
+          npm stage publish --provenance --access public --tag "$tag"

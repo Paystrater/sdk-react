@@ -1,0 +1,62 @@
+{
+  "description": "Shared core vectors: @paystrater/react, @paystrater/react-native and paystrater_flutter must all give these answers.",
+  "baseUnits": [
+    { "amount": "10.25", "decimals": 6, "units": "10250000" },
+    { "amount": "0.000001", "decimals": 6, "units": "1" },
+    { "amount": "1", "decimals": 18, "units": "1000000000000000000" },
+    { "amount": "123456789.123456789123456789", "decimals": 18, "units": "123456789123456789123456789" },
+    { "amount": "1.10000000", "decimals": 6, "units": "1100000" },
+    { "amount": "1.0000001", "decimals": 6, "units": null },
+    { "amount": "1e3", "decimals": 6, "units": null },
+    { "amount": "-1", "decimals": 6, "units": null }
+  ],
+  "formatAmount": [
+    { "amount": "1234567.891234", "formatted": "1,234,567.891234" },
+    { "amount": "10.256789", "formatted": "10.256789" },
+    { "amount": "999", "formatted": "999" }
+  ],
+  "compareAmounts": [
+    { "a": "10.00", "b": "10", "result": 0 },
+    { "a": "9.99", "b": "10", "result": -1 },
+    { "a": "10.000001", "b": "10", "result": 1 }
+  ],
+  "walletLink": [
+    {
+      "tokenAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "tokenDecimals": 6,
+      "chainId": 8453,
+      "depositAddress": "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+      "amount": "25.25",
+      "link": "ethereum:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913@8453/transfer?address=0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB&uint256=25250000"
+    }
+  ],
+  "keccak256": [
+    { "utf8": "", "hash": "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470" },
+    { "utf8": "abc", "hash": "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45" }
+  ],
+  "evmAddress": [
+    { "address": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", "check": "ok" },
+    { "address": "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359", "check": "ok" },
+    { "address": "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB", "check": "ok" },
+    { "address": "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb", "check": "ok" },
+    { "address": "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", "check": "ok" },
+    { "address": "0x5AAEB6053F3E94C9B9A09F33669435E7EF1BEAED", "check": "ok" },
+    { "address": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD", "check": "checksum" },
+    { "address": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeA", "check": "format" },
+    { "address": "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE", "check": "format" }
+  ],
+  "publishableKey": [
+    { "key": "pk_live_abc", "mode": "live" },
+    { "key": "pk_test_abc", "mode": "test" },
+    { "key": "sk_live_abc", "mode": null },
+    { "key": "pk_staging_x", "mode": null },
+    { "key": "", "mode": null }
+  ],
+  "paymentId": [
+    { "id": "rcv_abc_DEF-123", "valid": true },
+    { "id": "rcv_", "valid": false },
+    { "id": "rcv_a%2F..", "valid": false },
+    { "id": "rcv_a/../b", "valid": false },
+    { "id": "snd_abc", "valid": false }
+  ]
+}
