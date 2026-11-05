@@ -944,7 +944,7 @@ export interface paths {
          *
          *     Lists the stacks, frameworks and features the setup assistant writes code for.
          *
-         *     Every stack, framework and feature the setup assistant offers, and which features can be served now, plain or encrypted. Browsers may keep the response for 60 seconds.
+         *     Every stack, framework and feature the setup assistant offers, and which features can be served now, plain or encrypted. React Native and Flutter are plain only: `encryptedBodies` is `false` and `readyEncryptedFeatures` is empty. Browsers may keep the response for 60 seconds.
          */
         get: operations["getSetupOptions"];
         put?: never;
@@ -970,7 +970,7 @@ export interface paths {
          *
          *     Retrieves the reviewed code for your stack, framework and features. If a part is in `missing`, ask for it with `POST /setup/generate`.
          *
-         *     The code for a stack, a framework and features: a core (the client, typed errors, retries, idempotency and, with `encryptedBodies=true`, encrypting every call and decrypting encrypted responses) and one part per feature, with a README. Every part passed a review before it was stored; `units` say when and against which version of this document. When a part is not ready yet, `available` is false, `missing` names it and `files` is empty: `POST /setup/generate` writes it.
+         *     The code for a stack, a framework and features: a core (the client, typed errors, retries, idempotency and, with `encryptedBodies=true`, encrypting every call and decrypting encrypted responses) and one part per feature, with a README. React, React Native and Flutter use Paystrater's published SDKs instead: `@paystrater/react`, `@paystrater/react-native` and `paystrater_flutter`. Their code is at most 3 files besides the README: the constants, the call to your own server that returns the `rcv_` ID, and one checkout component or screen. The publishable key is a plain constant, and so, on React with `encryptedBodies=true`, are the encryption key ID and public key, passed to the SDK's own encryption option. The README recommends filling these public constants from an environment variable; a plain value works too. A secret key never goes in this code: creating a payment stays on your server, and fulfilment on the webhook. Every part passed a review before it was stored; `units` say when and against which version of this document. When a part is not ready yet, `available` is false, `missing` names it and `files` is empty: `POST /setup/generate` writes it.
          */
         get: operations["getSetupBundle"];
         put?: never;
@@ -998,7 +998,7 @@ export interface paths {
          *
          *     Writes the next missing part for your choice, one step a call. Call again as `state` says. Once `requestedReady` is true, download the code with `GET /setup/bundle`.
          *
-         *     Writes what a choice is missing, one step a call: one write or one review, by Claude, of the first part that needs it, in the order core, the features asked for, then every other feature the stack offers. Every choice is stored in both versions, plain and encrypted: the plain core is written first, the encrypted core is the plain core with encryption added, and each feature is written once and stored for both versions. `parts` shows the version you asked for, and `state` stays `working` until the other version is stored too. A part passes plain checks and a separate review before it is stored and served to everyone who makes the same choice; one that fails is written again with the findings, up to 4 rounds. Call again at once while `state` is `working`, and after `retryAfterSeconds` while it is `waiting` or `paused`; once `requestedReady` is true, fetch `GET /setup/bundle`. A call can take several minutes. Writing is bounded across every visitor: one call per part at a time, 6 at once and 400 steps a UTC day (then `paused`). `off` means writing is switched off; ready code is still served.
+         *     Writes what a choice is missing, one step a call: one write or one review, by Claude, of the first part that needs it, in the order core, the features asked for, then every other feature the stack offers. Every choice is stored in both versions, plain and encrypted: the plain core is written first, the encrypted core is the plain core with encryption added, and each feature is written once and stored for both versions. `parts` shows the version you asked for, and `state` stays `working` until the other version is stored too. React Native and Flutter are plain only: their SDKs have no encryption options, so only the plain version is stored, and `encryptedBodies: true` gets a 400. A part passes plain checks and a separate review before it is stored and served to everyone who makes the same choice; one that fails is written again with the findings, up to 4 rounds. Call again at once while `state` is `working`, and after `retryAfterSeconds` while it is `waiting` or `paused`; once `requestedReady` is true, fetch `GET /setup/bundle`. A call can take several minutes. Writing is bounded across every visitor: one call per part at a time, 6 at once and 400 steps a UTC day (then `paused`). `off` means writing is switched off; ready code is still served.
          */
         post: operations["generateSetupCode"];
         delete?: never;
@@ -3691,7 +3691,7 @@ export interface components {
              * @example []
              */
             missing: string[];
-            /** @description The files to add to your project. `README.md` comes first. */
+            /** @description The files to add to your project. `README.md` comes first. React, React Native and Flutter have at most 3 files besides it. */
             files: components["schemas"]["SetupFile"][];
             /** @description Where each part came from. */
             units: components["schemas"]["SetupUnit"][];
@@ -3766,7 +3766,7 @@ export interface components {
              */
             readyFeatures: string[];
             /**
-             * @description Features that can be served now, encrypted.
+             * @description Features that can be served now, encrypted. Always empty for a stack whose `encryptedBodies` is `false`.
              * @example [
              *       "incoming_payments"
              *     ]
@@ -3794,7 +3794,7 @@ export interface components {
              */
             features: string[];
             /**
-             * @description Optional. Set to `true` for code that encrypts every call to your encryption key and decrypts encrypted responses.
+             * @description Optional. Set to `true` for code that encrypts every call to your encryption key and decrypts encrypted responses. React Native and Flutter are plain only, so `true` gets a 400 for them.
              * @default false
              * @example false
              */
@@ -3892,16 +3892,22 @@ export interface components {
              * @description Where its code runs:
              *
              *     - `server`: on your server. It holds a secret key.
-             *     - `client`: in a browser or app. It only runs checkout with a public key.
+             *     - `client`: in a browser or app. It only runs checkout with a publishable key, through Paystrater's SDK for the stack.
              * @example server
              * @enum {string}
              */
             side: "server" | "client";
             /**
-             * @description `true` if the stack comes with encryption. Every stack does.
+             * @description `true` if the stack comes with encryption. React Native and Flutter do not: their SDKs have no encryption options, so they are plain only.
              * @example true
              */
             encryptedBodies: boolean;
+            /**
+             * Format: uri
+             * @description Optional. The package page of the Paystrater SDK the stack's code uses. Only React, React Native and Flutter have one.
+             * @example https://www.npmjs.com/package/@paystrater/react
+             */
+            sdkLink?: string;
             /** @description Its frameworks. */
             frameworks: components["schemas"]["SetupFramework"][];
         };
@@ -7539,7 +7545,7 @@ export interface operations {
                  */
                 features: string[];
                 /**
-                 * @description Optional. Code that encrypts every call to your encryption key and decrypts encrypted responses. Every stack, checkout included.
+                 * @description Optional. Code that encrypts every call to your encryption key and decrypts encrypted responses. React Native and Flutter are plain only, so `true` gets a 400 for them.
                  * @example false
                  */
                 encryptedBodies?: boolean;

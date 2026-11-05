@@ -1,6 +1,8 @@
 // Theming in the style of enterprise-grade checkout SDKs: a theme
 // plus a short list of variables. The defaults are the Paystrater design from
-// the dashboard's src/app/globals.css, the source of truth.
+// the landing page and app refresh (landing-page/src/app/globals.css): bordered,
+// rounded panels with no shadows, #285BB6 in light mode and #A2AED1 with ink
+// text in dark mode.
 
 export type ThemeName = "light" | "dark" | "auto"
 
@@ -47,11 +49,11 @@ const FONTS = {
 
 export const LIGHT: ThemeVariables = {
   colorBackground: "#FFFFFF",
-  colorSurface: "#F3F4F6",
+  colorSurface: "#F4F4F1",
   colorText: "#111318",
   colorTextBody: "#3A3F4A",
   colorTextMuted: "#636975",
-  colorBorder: "#DADCE2",
+  colorBorder: "#E2E2DD",
   colorPrimary: "#285BB6",
   colorPrimaryHover: "#1D4693",
   colorOnPrimary: "#FFFFFF",
@@ -65,15 +67,15 @@ export const LIGHT: ThemeVariables = {
 
 export const DARK: ThemeVariables = {
   colorBackground: "#0C0D10",
-  colorSurface: "#1B1D23",
+  colorSurface: "#1C1E24",
   colorText: "#F2F3F5",
   colorTextBody: "#C4C8D0",
   colorTextMuted: "#8E94A0",
-  colorBorder: "#2E313A",
-  // Filled buttons keep the saturated blue with white text in dark mode too
-  colorPrimary: "#285BB6",
-  colorPrimaryHover: "#3A6CC4",
-  colorOnPrimary: "#FFFFFF",
+  colorBorder: "#272931",
+  // Filled buttons are the periwinkle from the landing page and app with ink text: 8.5:1
+  colorPrimary: "#A2AED1",
+  colorPrimaryHover: "#B8C3E0",
+  colorOnPrimary: "#0A1224",
   colorPrimaryText: "#A2AED1",
   colorPrimarySoft: "#182136",
   colorSuccess: "#4ADEA0",

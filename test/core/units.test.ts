@@ -145,6 +145,8 @@ describe("theme", () => {
     expect(LIGHT.colorPrimary).toBe("#285BB6")
     expect(DARK.colorBackground).toBe("#0C0D10")
     expect(DARK.colorPrimaryText).toBe("#A2AED1")
+    expect(DARK.colorPrimary).toBe("#A2AED1")
+    expect(DARK.colorOnPrimary).toBe("#0A1224")
   })
   it("follows prefers-color-scheme on auto and takes the merchant's variables", () => {
     expect(resolveTheme({ theme: "auto" }, true).colorBackground).toBe(DARK.colorBackground)
