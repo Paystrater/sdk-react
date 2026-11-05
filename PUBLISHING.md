@@ -20,13 +20,25 @@ npx changeset version && npm install --package-lock-only
 
 Use patch for fixes, minor for new features and major for breaking changes. The first stable release is `1.0.0`.
 
-**2. Check it.**
+**2. Check it.** If the Developer API changed since the last release, regenerate the types first (see [When the API changes](#when-the-api-changes)), then run the checks on Node 24 (`nvm use` reads `.nvmrc`):
 
 ```bash
+nvm use
+npm run types   # only when the API changed
 npm run check
 ```
 
-**3. Merge.** Commit, push `dev`, and merge it into `main` by pull request once CI passes. Merge `sdk-react` before `sdk-react-native` whenever the shared core changes, because React Native's CI compares its copy with `main` here.
+**3. Merge.** Commit, push `dev`, and merge it into `main` by pull request once CI passes.
+
+```bash
+git add -A
+git commit -m "feat: <what changed>"
+git commit -am "chore: release 0.1.0-next.1"   # the version bump from step 1, if it isn't in the first commit
+git push origin dev
+gh pr create --base main --head dev --fill
+gh pr merge --merge                            # once CI is green
+```
+ Merge `sdk-react` before `sdk-react-native` whenever the shared core changes, because React Native's CI compares its copy with `main` here.
 
 **4. Tag `main`.** The tag must be `v` plus the version in `package.json`.
 
@@ -36,6 +48,12 @@ git checkout main && git pull && git tag v0.1.0-next.1 && git push origin v0.1.0
 
 **5. Approve.** Approve the **Release** job in GitHub, wait for it to finish, then open the package's **Staged Packages** tab on npmjs.com, check the version and click **Approve**. This needs 2FA on your npm account.
 
+**6. Point `latest` at it.** A pre-release goes to the `next` tag, but setups and the docs install with the plain `npm install @paystrater/react`, which takes `latest`. So move `latest` to every new release (a stable version goes to `latest` by itself, so skip this for one):
+
+```bash
+npm dist-tag add @paystrater/react@0.1.0-next.1 latest --otp=<code from your authenticator>
+```
+
 Then confirm what went out:
 
 ```bash
@@ -43,6 +61,20 @@ npm view @paystrater/react dist-tags
 ```
 
 Before the first stable release, test a `next` version on staging with test keys: a test merchant's `pk_test_…` key, its encryption key, and a payment created on `https://staging-api.paystrater.com`. Check the checkout end to end in a browser, including an encrypted payment.
+
+## When the API changes
+
+The SDK's API types (`src/core/generated/developer-api.ts`) are generated from the Developer API spec, so a route or field change reaches the SDK through the spec, never by hand.
+
+```bash
+npm run types                       # regenerate src/core/generated/developer-api.ts
+npm run check                       # fix anything the new types break
+git add src/core/generated && git commit -m "feat: follow the API's <change>"
+```
+
+CI runs `npm run types && git diff --exit-code src/core/generated` against the published spec (`https://docs.paystrater.com/developer-api.yaml`), so a pull request fails until the regenerated file is committed. Run it once the backend change is published: on your computer the script prefers the copy built in `developer-service` (`./scripts.sh docs`), which can be newer than what CI sees.
+
+When the shared core or its generated types change, run `npm run sync-core` in `sdk-react-native` too, and `tool/sync_vectors.sh` in `sdk-flutter` if the test vectors changed.
 
 ## If a release fails
 
