@@ -107,6 +107,8 @@ const POLL_MS = 4_000
 const SLOW_POLL_MS = 10_000
 const SLOW_UNDER = 50
 const MAX_BACKOFF_MS = 30_000
+/** Reads to keep at the slow pace after a limit that sends no RateLimit headers, about two minutes */
+const SLOW_READS_AFTER_LIMIT = 12
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /** Every status but a final one keeps the page reading, unknown ones included */
@@ -206,6 +208,8 @@ export class Checkout {
   private inFlight?: AbortController
   private stopActivity?: () => void
   private failures = 0
+  private slowReads = 0
+  private readFailure?: PaystraterError
   private running = false
   private lastStatus?: string
 
@@ -377,8 +381,12 @@ export class Checkout {
     if (res.ok) {
       this.failures = 0
       this.observe(res.data)
-      if (this.state.error && this.state.error.kind !== "api") this.set({ error: undefined })
-      this.schedule(this.state.slowed ? SLOW_POLL_MS : this.pollMs)
+      // A failed read has passed; an action's error stays until the next action
+      const shown = this.state.error
+      if (shown && (shown.kind !== "api" || shown === this.readFailure)) this.set({ error: undefined })
+      const slow = this.state.slowed || this.slowReads > 0
+      if (this.slowReads > 0) this.slowReads -= 1
+      this.schedule(slow ? SLOW_POLL_MS : this.pollMs)
       return
     }
 
@@ -392,6 +400,8 @@ export class Checkout {
       return
     }
     this.failures += 1
+    this.readFailure = error
+    if (error.status === 429 || error.status === 403) this.slowReads = SLOW_READS_AFTER_LIMIT
     this.set({ error })
     // 429: wait Retry-After; network and 5xx: back off, keeping any countdown running
     const wait =
@@ -420,7 +430,9 @@ export class Checkout {
 
   private schedule(ms: number) {
     this.clearTimer()
-    if (!this.running || !isWaiting(this.state.payment?.status)) return
+    // No payment yet means the first read failed: keep trying
+    const payment = this.state.payment
+    if (!this.running || (payment && !isWaiting(payment.status))) return
     this.timer = setTimeout(() => void this.read(), ms)
   }
 

@@ -203,3 +203,19 @@ describe("the client with encryption", () => {
     expect(calls).toHaveLength(0)
   })
 })
+
+describe("a block in front of the API", () => {
+  it("treats a 403 with no Paystrater error body as temporary", async () => {
+    const { fetch } = fakeFetch(() => new Response("<html>Forbidden</html>", { status: 403 }))
+    const res = await createClient({ publishableKey: PK_TEST, fetch }).startTransferToPay({ receivePaymentId: ID, chainId: 8453 })
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.error).toMatchObject({ kind: "network", status: 403 })
+  })
+
+  it("keeps a 403 with Paystrater's own error as the set-up problem it is", async () => {
+    const { fetch } = fakeFetch(() => fail(403, "This website is not on the API Key's domain allowlist."))
+    const res = await createClient({ publishableKey: PK_TEST, fetch }).startTransferToPay({ receivePaymentId: ID, chainId: 8453 })
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.error).toMatchObject({ kind: "api", status: 403 })
+  })
+})

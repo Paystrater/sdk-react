@@ -452,3 +452,48 @@ describe("polling", () => {
     expect(net.calls).toHaveLength(0)
   })
 })
+
+describe("failed reads", () => {
+  it("keeps polling after a block in front of the API, and clears the error when it passes", async () => {
+    let blocked = true
+    const t = setup(() => (blocked ? new Response("Forbidden", { status: 403 }) : ok(payment())))
+    t.checkout.start()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(t.state().stage).toBe("loading")
+    expect(t.state().error).toMatchObject({ kind: "network", status: 403 })
+    blocked = false
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(t.state().stage).toBe("methods")
+    expect(t.state().error).toBeUndefined()
+  })
+
+  it("clears a passing 429 once a read succeeds", async () => {
+    let n = 0
+    const t = setup(() => (n++ === 0 ? fail(429, "Too many requests.", { "Retry-After": "60" }) : ok(payment())))
+    t.checkout.start()
+    await settle()
+    expect(t.state().error?.status).toBe(429)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(t.state().stage).toBe("methods")
+    expect(t.state().error).toBeUndefined()
+  })
+
+  it("polls every 10 seconds for about two minutes after a 429, then every 4", async () => {
+    let n = 0
+    const t = setup(() => (n++ === 1 ? fail(429, "Too many requests.", { "Retry-After": "11" }) : ok(payment())))
+    t.checkout.start()
+    await settle()
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(t.reads()).toBe(2)
+    await vi.advanceTimersByTimeAsync(11_000)
+    expect(t.reads()).toBe(3)
+    await vi.advanceTimersByTimeAsync(9_000)
+    expect(t.reads()).toBe(3)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(t.reads()).toBe(4)
+    await vi.advanceTimersByTimeAsync(110_000)
+    expect(t.reads()).toBe(15)
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(t.reads()).toBe(16)
+  })
+})

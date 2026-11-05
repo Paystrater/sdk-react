@@ -217,14 +217,14 @@ export function PaystraterCheckout(props: PaystraterCheckoutProps) {
       className={props.className ? `ps-checkout ${props.className}` : "ps-checkout"}
       style={toCssVariables(theme) as React.CSSProperties}
       aria-label={p ? fill(t.payTo, { merchant }) : t.loading}
-      aria-busy={c.stage === "loading"}
+      aria-busy={c.stage === "loading" && !c.error}
     >
       <style nonce={props.nonce}>{CSS}</style>
       {testMode && <div className="ps-ribbon" title={t.testModeHint}>{t.testMode}</div>}
       <p className="ps-sr" role="status" aria-live="polite">
         {liveText(c, t)}
       </p>
-      {p ? <Header payment={p} action={props.headerAction} t={t} /> : c.stage === "loading" ? <Skeleton /> : null}
+      {p ? <Header payment={p} action={props.headerAction} t={t} /> : c.stage === "loading" && !c.error ? <Skeleton /> : null}
       <Body c={c} t={t} headingRef={headingRef} errorText={errorText} merchant={merchant} onStartAgain={props.onStartAgain} />
       {c.stage === "final" && props.endFooter}
     </section>
@@ -310,21 +310,24 @@ function Body({ c, t, headingRef, errorText, merchant, onStartAgain }: BodyProps
     </button>
   )
 
+  const problem = (
+    <div className="ps-stack">
+      {title(t.errorTitle)}
+      <div className="ps-alert" role="alert">{errorText(c.error)}</div>
+      {c.error && (c.error.kind === "network" || c.error.kind === "timeout" || c.error.status >= 500) && (
+        <button type="button" className="ps-btn ps-secondary" onClick={c.refresh}>
+          {t.tryAgain}
+        </button>
+      )}
+    </div>
+  )
+
   switch (c.stage) {
     case "loading":
-      return <p className="ps-sr">{t.loading}</p>
+      // The first read failed: say so, and keep trying behind the message
+      return c.error ? problem : <p className="ps-sr">{t.loading}</p>
     case "unavailable":
-      return (
-        <div className="ps-stack">
-          {title(t.errorTitle)}
-          <div className="ps-alert" role="alert">{errorText(c.error)}</div>
-          {c.error && (c.error.kind === "network" || c.error.kind === "timeout" || c.error.status >= 500) && (
-            <button type="button" className="ps-btn ps-secondary" onClick={c.refresh}>
-              {t.tryAgain}
-            </button>
-          )}
-        </div>
-      )
+      return problem
     case "methods":
       return (
         <div className="ps-stack">

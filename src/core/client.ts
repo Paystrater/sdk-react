@@ -80,6 +80,9 @@ function readRateLimit(headers: Headers): RateLimit {
   }
 }
 
+/** A 403 with no Paystrater error body came from in front of the API (a per-IP block), so it will pass */
+const BLOCKED_MESSAGE = "Too many requests from your network. Wait a moment, then try again."
+
 function fallbackMessage(status: number): string {
   if (status === 429) return "Too many requests. Wait a moment, then try again."
   if (status >= 500) return "Something went wrong at Paystrater. Try again in a moment."
@@ -205,6 +208,9 @@ export function createClient(config: ClientConfig): CheckoutClient {
     // Errors come back plain: read the status before decrypting
     if (!res.ok || (json as { isError?: unknown } | null)?.isError === true) {
       const err = ((json as { error?: Record<string, unknown> } | null)?.error ?? {}) as Record<string, unknown>
+      if (res.status === 403 && typeof err.message !== "string") {
+        return { ok: false, error: { kind: "network", status: 403, message: BLOCKED_MESSAGE }, rateLimit }
+      }
       return {
         ok: false,
         error: {
