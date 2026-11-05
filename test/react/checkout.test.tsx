@@ -49,6 +49,16 @@ describe("<PaystraterCheckout>", () => {
     expect(net.calls).toHaveLength(0)
   })
 
+  it("shows the error and Try again when the first read fails, not an endless skeleton", async () => {
+    serve(() => {
+      throw new TypeError("Failed to fetch")
+    })
+    const { container } = render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
+    expect((await screen.findByRole("alert", {}, { timeout: 3000 })).textContent).toContain("couldn't reach Paystrater")
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy()
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull()
+  })
+
   it("shows the merchant, the exact amount and a Test mode ribbon on a test key", async () => {
     serve(() => ok(payment({ amount: "1234.567891" })))
     render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
