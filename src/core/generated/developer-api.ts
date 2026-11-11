@@ -981,6 +981,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/setup/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check integration code progress
+         * @description - **API key:** none needed. This route is public.
+         *     - **Scope needed on the API key:** none.
+         *     - **Rate limit:** 60 requests a minute per IP address.
+         *
+         *     Shows where writing the code for your choice stands, without taking a step. Answers at once.
+         *
+         *     The same answer `POST /setup/generate` gives, read from what is stored: each part's state, the round it is on and `requestedReady`. A part another visitor's call is writing or reviewing right now is `working`, and `state` is then `waiting` with `retryAfterSeconds`: check again then, and call `POST /setup/generate` once `state` is `working` and no call of yours is running. Use this route to show progress while a generate call is running, or when a page opens on a choice someone already started. It never writes code and does not count toward the hourly generate limit.
+         */
+        get: operations["getSetupProgress"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/setup/generate": {
         parameters: {
             query?: never;
@@ -996,7 +1022,7 @@ export interface paths {
          *     - **Scope needed on the API key:** none.
          *     - **Rate limit:** 60 requests an hour per IP address, within the 60 a minute per IP address shared with the other setup routes.
          *
-         *     Writes the next missing part for your choice, one step a call. Call again as `state` says. Once `requestedReady` is true, download the code with `GET /setup/bundle`.
+         *     Writes the next missing part for your choice, one step a call. Call again as `state` says; `GET /setup/progress` shows the same answer at once without a step. Once `requestedReady` is true, download the code with `GET /setup/bundle`.
          *
          *     Writes what a choice is missing, one step a call: one write or one review, by Claude, of the first part that needs it, in the order core, the features asked for, then every other feature the stack offers. Every choice is stored in both versions, plain and encrypted: the plain core is written first, the encrypted core is the plain core with encryption added, and each feature is written once and stored for both versions. `parts` shows the version you asked for, and `state` stays `working` until the other version is stored too. React Native and Flutter are plain only: their SDKs have no encryption options, so only the plain version is stored, and `encryptedBodies: true` gets a 400. A part passes plain checks and a separate review before it is stored and served to everyone who makes the same choice; one that fails is written again with the findings, up to 4 rounds. Call again at once while `state` is `working`, and after `retryAfterSeconds` while it is `waiting` or `paused`; once `requestedReady` is true, fetch `GET /setup/bundle`. A call can take several minutes. Writing is bounded across every visitor: one call per part at a time, 6 at once and 400 steps a UTC day (then `paused`). `off` means writing is switched off; ready code is still served.
          */
@@ -7567,6 +7593,58 @@ export interface operations {
                 content: {
                     "application/json": Omit<components["schemas"]["SuccessEnvelope"], "response"> & {
                         response?: components["schemas"]["SetupBundle"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getSetupProgress: {
+        parameters: {
+            query: {
+                /**
+                 * @description A stack ID from `GET /setup/options`.
+                 * @example node-ts
+                 */
+                stack: string;
+                /**
+                 * @description A framework ID of that stack.
+                 * @example express
+                 */
+                framework: string;
+                /**
+                 * @description Comma-separated feature IDs the stack offers.
+                 * @example [
+                 *       "incoming_payments",
+                 *       "webhooks"
+                 *     ]
+                 */
+                features: string[];
+                /**
+                 * @description Optional. Code that encrypts every call to your encryption key and decrypts encrypted responses. React Native and Flutter are plain only, so `true` gets a 400 for them.
+                 * @example false
+                 */
+                encryptedBodies?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful. */
+            200: {
+                headers: {
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Omit<components["schemas"]["SuccessEnvelope"], "response"> & {
+                        response?: components["schemas"]["SetupProgress"];
                     };
                 };
             };

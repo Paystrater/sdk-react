@@ -1,6 +1,6 @@
 {
   "name": "@paystrater/react",
-  "version": "0.1.0-next.4",
+  "version": "0.1.0-next.5",
   "description": "Paystrater checkout for React: one component and one hook for Pay with Paystrater, Transfer to Pay and agent payments.",
   "license": "MIT",
   "author": "Paystrater",

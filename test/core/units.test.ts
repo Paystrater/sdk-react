@@ -143,10 +143,10 @@ describe("strings", () => {
 describe("theme", () => {
   it("defaults to the Paystrater design from the dashboard's globals.css", () => {
     expect(LIGHT.colorPrimary).toBe("#285BB6")
-    expect(DARK.colorBackground).toBe("#0C0D10")
+    expect(DARK.colorBackground).toBe("#24272F")
     expect(DARK.colorPrimaryText).toBe("#A2AED1")
     expect(DARK.colorPrimary).toBe("#A2AED1")
-    expect(DARK.colorOnPrimary).toBe("#0A1224")
+    expect(DARK.colorOnPrimary).toBe("#131519")
   })
   it("follows prefers-color-scheme on auto and takes the merchant's variables", () => {
     expect(resolveTheme({ theme: "auto" }, true).colorBackground).toBe(DARK.colorBackground)

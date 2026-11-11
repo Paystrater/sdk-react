@@ -1,8 +1,9 @@
 // Theming in the style of enterprise-grade checkout SDKs: a theme
-// plus a short list of variables. The defaults are the Paystrater design from
-// the landing page and app refresh (landing-page/src/app/globals.css): bordered,
-// rounded panels with no shadows, #285BB6 in light mode and #A2AED1 with ink
-// text in dark mode.
+// plus a short list of variables. The defaults follow the Paystrater mobile app
+// (mobile/paystrater src/utils/colors.ts), the brand theme source for every
+// Paystrater surface: the checkout card is the app's sub-surface (white, or
+// #24272F in dark), wells are the app surface, #285BB6 in light mode and
+// #A2AED1 with dark text in dark mode. See .agents/rules/DESIGN.md.
 
 export type ThemeName = "light" | "dark" | "auto"
 
@@ -49,38 +50,38 @@ const FONTS = {
 
 export const LIGHT: ThemeVariables = {
   colorBackground: "#FFFFFF",
-  colorSurface: "#F4F4F1",
-  colorText: "#111318",
+  colorSurface: "#ECF0F3",
+  colorText: "#1B1B1F",
   colorTextBody: "#3A3F4A",
   colorTextMuted: "#636975",
-  colorBorder: "#E2E2DD",
+  colorBorder: "#D4DAE6",
   colorPrimary: "#285BB6",
   colorPrimaryHover: "#1D4693",
   colorOnPrimary: "#FFFFFF",
   colorPrimaryText: "#285BB6",
-  colorPrimarySoft: "#EAF1FC",
+  colorPrimarySoft: "#E2E9F5",
   colorSuccess: "#047857",
   colorWarning: "#B45309",
-  colorDanger: "#C41E3A",
+  colorDanger: "#BA1A1A",
   ...FONTS
 }
 
 export const DARK: ThemeVariables = {
-  colorBackground: "#0C0D10",
-  colorSurface: "#1C1E24",
-  colorText: "#F2F3F5",
-  colorTextBody: "#C4C8D0",
-  colorTextMuted: "#8E94A0",
-  colorBorder: "#272931",
-  // Filled buttons are the periwinkle from the landing page and app with ink text: 8.5:1
+  colorBackground: "#24272F",
+  colorSurface: "#2C303A",
+  colorText: "#E3E2E6",
+  colorTextBody: "#D4D7E0",
+  colorTextMuted: "#A4A9B8",
+  colorBorder: "#343844",
+  // Filled buttons are periwinkle with dark text, as in the mobile app
   colorPrimary: "#A2AED1",
   colorPrimaryHover: "#B8C3E0",
-  colorOnPrimary: "#0A1224",
+  colorOnPrimary: "#131519",
   colorPrimaryText: "#A2AED1",
-  colorPrimarySoft: "#182136",
+  colorPrimarySoft: "#353A48",
   colorSuccess: "#4ADEA0",
   colorWarning: "#FBBF24",
-  colorDanger: "#F87185",
+  colorDanger: "#FFB4AB",
   ...FONTS
 }
 
