@@ -13,6 +13,10 @@ describe("publishable keys", () => {
   it("accepts live and test publishable keys and reads the mode from the prefix", () => {
     expect(checkPublishableKey("pk_live_abc")).toEqual({ ok: true, mode: "live" })
     expect(checkPublishableKey("pk_test_abc")).toEqual({ ok: true, mode: "test" })
+    // Keys are base64url after the prefix, so - and _ appear in them
+    expect(checkPublishableKey("pk_test_7TX_tLLlo-W0jD")).toEqual({ ok: true, mode: "test" })
+    // Only the prefix is checked, so other characters are the API's to judge
+    expect(checkPublishableKey("pk_test_a.b~c+d")).toEqual({ ok: true, mode: "test" })
   })
   it("refuses a secret key and says why", () => {
     const res = checkPublishableKey("sk_live_abc")
@@ -22,7 +26,16 @@ describe("publishable keys", () => {
   it("refuses anything else", () => {
     expect(checkPublishableKey("").ok).toBe(false)
     expect(checkPublishableKey("pk_staging_x").ok).toBe(false)
+    expect(checkPublishableKey("pk_test_").ok).toBe(false)
+    expect(checkPublishableKey("pk_live_").ok).toBe(false)
     expect(checkPublishableKey(undefined).ok).toBe(false)
+  })
+  it("refuses a key with a space or line break and says why", () => {
+    for (const key of [" pk_test_abc", "pk_test_abc\n", "pk_test_a bc"]) {
+      const res = checkPublishableKey(key)
+      expect(res.ok).toBe(false)
+      if (!res.ok) expect(res.message).toMatch(/space or line break/)
+    }
   })
   it("uses production for live keys and the sandbox for test keys", () => {
     expect(apiBaseFor("live")).toBe("https://api.paystrater.com")
