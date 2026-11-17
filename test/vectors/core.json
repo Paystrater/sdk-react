@@ -48,6 +48,11 @@
   "publishableKey": [
     { "key": "pk_live_abc", "mode": "live" },
     { "key": "pk_test_abc", "mode": "test" },
+    { "key": "pk_test_7TX_tLLlo-W0jD", "mode": "test" },
+    { "key": "pk_test_a.b~c+d", "mode": "test" },
+    { "key": "pk_test_", "mode": null },
+    { "key": "pk_live_", "mode": null },
+    { "key": " pk_test_abc", "mode": null },
     { "key": "sk_live_abc", "mode": null },
     { "key": "pk_staging_x", "mode": null },
     { "key": "", "mode": null }

@@ -5,11 +5,12 @@ export type KeyMode = "live" | "test"
 
 export type KeyCheck = { ok: true; mode: KeyMode } | { ok: false; message: string }
 
-const PUBLISHABLE = /^pk_(live|test)_[A-Za-z0-9]+$/
-
 export function checkPublishableKey(key: unknown): KeyCheck {
   if (typeof key !== "string" || key.trim() === "") {
     return { ok: false, message: "Pass your publishable key (pk_live_… or pk_test_…) from the Paystrater dashboard." }
+  }
+  if (/\s/.test(key)) {
+    return { ok: false, message: "The publishable key has a space or line break in it; copy it again from the dashboard." }
   }
   if (key.startsWith("sk_")) {
     return {
@@ -18,9 +19,13 @@ export function checkPublishableKey(key: unknown): KeyCheck {
         "This is a secret key. Never put a secret key in a browser or an app: anyone can read it there. Use your publishable key (pk_live_… or pk_test_…); create payments with the secret key on your server."
     }
   }
-  const match = PUBLISHABLE.exec(key)
-  if (!match) return { ok: false, message: "A publishable key starts with pk_live_ or pk_test_." }
-  return { ok: true, mode: match[1] as KeyMode }
+  // Only the prefix is checked: the dashboard's keys are base64url after it,
+  // and the API is the judge of the rest.
+  for (const mode of ["live", "test"] as const) {
+    const prefix = `pk_${mode}_`
+    if (key.startsWith(prefix) && key.length > prefix.length) return { ok: true, mode }
+  }
+  return { ok: false, message: "A publishable key starts with pk_live_ or pk_test_." }
 }
 
 /** The API host for a key's mode: live keys on production, test keys on the sandbox */
