@@ -530,7 +530,7 @@ function TransferForm({ c, t, title, actionError, back }: StepProps) {
               </button>
             ))}
           </div>
-          {problem === "chain" && <p className="ps-error">{t.chooseChain}</p>}
+          {problem === "chain" && <p className="ps-error">{t.chooseChainRequired}</p>}
         </div>
       )}
       <Field label={t.emailLabel} optional={t.optional} help={t.emailHelp} error={problem === "email" ? t.emailFormat : undefined}>
@@ -654,7 +654,7 @@ function Agent({ c, t, title, actionError, back }: StepProps) {
   return (
     <div className="ps-stack">
       {title(t.agentTitle, true)}
-      <p className="ps-muted">{t.agentHint}</p>
+      <p className="ps-muted">{t.agentStartHint}</p>
       {actionError}
       <button type="button" className="ps-btn ps-primary" disabled={c.busy} onClick={() => void c.startAgentic()}>
         {t.continue}
