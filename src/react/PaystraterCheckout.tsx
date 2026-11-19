@@ -8,9 +8,10 @@ import { walletLink, formatAmount, isPositiveAmount } from "../core/amount.js"
 import type { Deposit, FieldProblem } from "../core/checkout.js"
 import type { EncryptionOptions } from "../core/encryptionConfig.js"
 import { errorForPayer, type PaystraterError } from "../core/errors.js"
-import { fill, stringsFor, type Locale, type Strings } from "../core/strings.js"
+import { capitalizeWords, fill, fillParts, stringsFor, type Locale, type Strings } from "../core/strings.js"
 import { contrastWarnings, resolveTheme, toCssVariables, type Appearance } from "../core/theme.js"
 import type { CheckoutPayment, PaymentMethod } from "../core/types.js"
+import { ArrowLeft, MethodIcon, PoweredBy } from "./brand.js"
 import { qrMatrix, qrPath } from "./qr.js"
 import { CSS } from "./styles.js"
 import { usePaystraterPayment, type PaystraterPayment, type PaystraterPaymentOptions } from "./usePaystraterPayment.js"
@@ -47,6 +48,26 @@ function initials(name: string) {
     .slice(0, 2)
     .map((w) => w[0]!.toUpperCase())
     .join("")
+}
+
+/**
+ * A template filled with names in capitals: each value whose key is in names
+ * goes in its own span, so only the name is capitalized, never the sentence.
+ */
+function Named({ template, values, names }: { template: string; values: Record<string, string | undefined>; names: string[] }) {
+  return (
+    <>
+      {fillParts(template, values).map((part, index) =>
+        part.key && names.includes(part.key) ? (
+          <span key={index} className="ps-name">
+            {part.text}
+          </span>
+        ) : (
+          part.text
+        )
+      )}
+    </>
+  )
 }
 
 function formatDuration(seconds: number): string {
@@ -118,7 +139,7 @@ function CopyButton({ value, label, copied }: { value: string; label: string; co
   return (
     <button
       type="button"
-      className="ps-btn ps-secondary"
+      className="ps-btn ps-tonal ps-small"
       onClick={() => {
         navigator.clipboard?.writeText(value).then(() => setDone(true), () => setDone(false))
       }}
@@ -174,7 +195,8 @@ export function PaystraterCheckout(props: PaystraterCheckoutProps) {
   const own = usePaystraterPayment(props.paymentId, { ...props, disabled: Boolean(props.checkout) })
   const c = props.checkout ?? own
   const t = useMemo(() => stringsFor(props.locale, props.strings), [props.locale, props.strings])
-  const prefersDark = usePrefersDark(props.appearance?.theme === "auto")
+  // "auto" is the default: follow the device unless the merchant picks a theme
+  const prefersDark = usePrefersDark((props.appearance?.theme ?? "auto") === "auto")
   const theme = useMemo(() => resolveTheme(props.appearance, prefersDark), [props.appearance, prefersDark])
   const testMode = c.mode === "test"
 
@@ -216,7 +238,7 @@ export function PaystraterCheckout(props: PaystraterCheckoutProps) {
     <section
       className={props.className ? `ps-checkout ${props.className}` : "ps-checkout"}
       style={toCssVariables(theme) as React.CSSProperties}
-      aria-label={p ? fill(t.payTo, { merchant }) : t.loading}
+      aria-label={p ? fill(t.payTo, { merchant: p.merchantName ? capitalizeWords(p.merchantName) : merchant }) : t.loading}
       aria-busy={c.stage === "loading" && !c.error}
     >
       <style nonce={props.nonce}>{CSS}</style>
@@ -227,6 +249,7 @@ export function PaystraterCheckout(props: PaystraterCheckoutProps) {
       {p ? <Header payment={p} action={props.headerAction} t={t} /> : c.stage === "loading" && !c.error ? <Skeleton /> : null}
       <Body c={c} t={t} headingRef={headingRef} errorText={errorText} merchant={merchant} onStartAgain={props.onStartAgain} />
       {c.stage === "final" && props.endFooter}
+      <PoweredBy label={t.poweredBy} />
     </section>
   )
 }
@@ -261,8 +284,8 @@ function Header({ payment, action, t }: { payment: CheckoutPayment; action?: Rea
   const [logoFailed, setLogoFailed] = useState(false)
   const name = payment.merchantName || ""
   return (
-    <div className="ps-stack" style={{ gap: 4, marginBottom: 20 }}>
-      <div className="ps-head" style={{ marginBottom: 8 }}>
+    <div className="ps-header">
+      <div className="ps-head">
         {payment.merchantLogoUrl && !logoFailed ? (
           <img className="ps-logo" src={payment.merchantLogoUrl} alt="" referrerPolicy="no-referrer" onError={() => setLogoFailed(true)} />
         ) : (
@@ -298,17 +321,23 @@ interface BodyProps {
 }
 
 function Body({ c, t, headingRef, errorText, merchant, onStartAgain }: BodyProps) {
-  const title = (text: string) => (
-    <h2 ref={headingRef} tabIndex={-1} className="ps-title">
+  // hidden: the method steps name their method in the row at the bottom; the heading stays for focus and screen readers
+  const title = (text: string, hidden = false) => (
+    <h2 ref={headingRef} tabIndex={-1} className={hidden ? "ps-title ps-sr" : "ps-title"}>
       {text}
     </h2>
   )
   const actionError = c.error && <div className="ps-alert" role="alert">{errorText(c.error)}</div>
-  const back = c.methods.length > 1 && !c.payment?.method && (
-    <button type="button" className="ps-link" onClick={c.back}>
-      {t.back}
-    </button>
-  )
+  // "← Pay with Paystrater" under the step's main action: the method being used, and the way back to the others
+  const back = (method: string) =>
+    c.methods.length > 1 && !c.payment?.method ? (
+      <button type="button" className="ps-back" onClick={c.back} aria-label={`${t.back}, ${method}`} title={t.back}>
+        <ArrowLeft />
+        <span>{method}</span>
+      </button>
+    ) : (
+      <p className="ps-back ps-back-static">{method}</p>
+    )
 
   const problem = (
     <div className="ps-stack">
@@ -336,8 +365,13 @@ function Body({ c, t, headingRef, errorText, merchant, onStartAgain }: BodyProps
             {c.methods.map((m) => (
               <li key={m}>
                 <button type="button" className="ps-method" onClick={() => c.choose(m)}>
-                  <strong>{methodTitle(m, t)}</strong>
-                  <span>{methodHint(m, t, c.chains.map((x) => x.chainName).join(", "))}</span>
+                  <span className="ps-method-icon">
+                    <MethodIcon method={m} />
+                  </span>
+                  <span className="ps-method-text">
+                    <strong>{methodTitle(m, t)}</strong>
+                    <span>{methodHint(m, t, c.chains.map((x) => x.chainName).join(", "))}</span>
+                  </span>
                 </button>
               </li>
             ))}
@@ -386,9 +420,9 @@ function methodHint(m: PaymentMethod, t: Strings, chains: string) {
 interface StepProps {
   c: PaystraterPayment
   t: Strings
-  title: (text: string) => ReactNode
+  title: (text: string, hidden?: boolean) => ReactNode
   actionError: ReactNode
-  back?: ReactNode
+  back: (method: string) => ReactNode
 }
 
 function PayWithPaystrater({ c, t, title, actionError, back }: StepProps) {
@@ -402,7 +436,11 @@ function PayWithPaystrater({ c, t, title, actionError, back }: StepProps) {
     return (
       <div className="ps-stack">
         {title(t.approveInApp)}
-        {sent.name && <p className="ps-note">{fill(t.sentTo, { name: sent.name })}</p>}
+        {sent.name && (
+          <p className="ps-note">
+            <Named template={t.sentTo} values={{ name: sent.name }} names={["name"]} />
+          </p>
+        )}
         <p className="ps-muted">{t.approveInAppHint}</p>
         {phone && c.payment && (
           <a className="ps-btn ps-primary" href={APP_LINK + c.payment.id}>
@@ -425,7 +463,7 @@ function PayWithPaystrater({ c, t, title, actionError, back }: StepProps) {
         setProblem(!res.ok ? res.field : undefined)
       }}
     >
-      {title(t.methodPayWithPaystrater)}
+      {title(t.methodPayWithPaystrater, true)}
       <Field label={t.payerLabel} help={t.payerHelp} error={problem === "payerRequired" ? t.payerRequired : undefined}>
         {({ id, describedBy }) => (
           <input
@@ -444,7 +482,7 @@ function PayWithPaystrater({ c, t, title, actionError, back }: StepProps) {
       <button type="submit" className="ps-btn ps-primary" disabled={c.busy}>
         {t.sendRequest}
       </button>
-      {back}
+      {back(t.methodPayWithPaystrater)}
     </form>
   )
 }
@@ -469,7 +507,7 @@ function TransferForm({ c, t, title, actionError, back }: StepProps) {
         setProblem(!res.ok ? res.field : undefined)
       }}
     >
-      {title(t.methodTransferToPay)}
+      {title(t.methodTransferToPay, true)}
       {c.chains.length > 1 && (
         <div className="ps-field">
           <span id={groupId} className="ps-label">
@@ -526,7 +564,7 @@ function TransferForm({ c, t, title, actionError, back }: StepProps) {
       <button type="submit" className="ps-btn ps-primary" disabled={c.busy}>
         {t.getAddress}
       </button>
-      {back}
+      {back(t.methodTransferToPay)}
     </form>
   )
 }
@@ -612,13 +650,13 @@ function Agent({ c, t, title, actionError, back }: StepProps) {
   }
   return (
     <div className="ps-stack">
-      {title(t.agentTitle)}
+      {title(t.agentTitle, true)}
       <p className="ps-muted">{t.agentHint}</p>
       {actionError}
       <button type="button" className="ps-btn ps-primary" disabled={c.busy} onClick={() => void c.startAgentic()}>
         {t.continue}
       </button>
-      {back}
+      {back(t.methodAgentic)}
     </div>
   )
 }
@@ -629,12 +667,14 @@ function Result({ c, t, title, merchant, onStartAgain }: Omit<StepProps, "action
   let mark = "!"
   let tone = "ps-neutral"
   let heading: string = t.statusFailed
-  let hint: string | undefined = p.failureReason
+  let hint: ReactNode = p.failureReason
+  // The merchant's name in capitals; the fallback ("the shop") stays as written
+  const withMerchant = (template: string) => <Named template={template} values={{ merchant }} names={p.merchantName ? ["merchant"] : []} />
   if (p.status === "succeeded") {
     mark = "✓"
     tone = "ps-ok"
     heading = t.statusSucceeded
-    hint = isPositiveAmount(excess) ? fill(t.excessRefunded, { amount: formatAmount(excess!), token: p.tokenTicker }) : fill(t.statusSucceededHint, { merchant })
+    hint = isPositiveAmount(excess) ? fill(t.excessRefunded, { amount: formatAmount(excess!), token: p.tokenTicker }) : withMerchant(t.statusSucceededHint)
   } else if (c.underpaid) {
     tone = "ps-bad"
     heading = t.statusUnderpaid
@@ -644,10 +684,10 @@ function Result({ c, t, title, merchant, onStartAgain }: Omit<StepProps, "action
     hint = t.statusLateHint
   } else if (p.status === "expired") {
     heading = t.statusExpired
-    hint = fill(t.statusExpiredHint, { merchant })
+    hint = withMerchant(t.statusExpiredHint)
   } else if (p.status === "cancelled") {
     heading = t.statusCancelled
-    hint = fill(t.statusCancelledHint, { merchant })
+    hint = withMerchant(t.statusCancelledHint)
   } else if (p.status === "refunded") {
     heading = t.statusRefunded
     hint = undefined

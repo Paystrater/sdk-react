@@ -1,6 +1,6 @@
 {
   "name": "@paystrater/react",
-  "version": "0.1.0-next.6",
+  "version": "0.1.0-next.7",
   "description": "Paystrater checkout for React: one component and one hook for Pay with Paystrater, Transfer to Pay and agent payments.",
   "license": "MIT",
   "author": "Paystrater",
@@ -102,6 +102,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "dev": "node --watch-path=src --watch-preserve-output scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "size": "node scripts/size.mjs",

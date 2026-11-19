@@ -15,6 +15,15 @@ function serve(route: (req: Recorded) => Response | Promise<Response>) {
   return net
 }
 
+/** Matches a <p> by its whole text, which may be split across a name's span */
+function paragraph(text: string | RegExp) {
+  return (_: string, element: Element | null) => {
+    if (element?.tagName !== "P") return false
+    const content = element.textContent ?? ""
+    return typeof text === "string" ? content === text : text.test(content)
+  }
+}
+
 function userAgent(ua: string) {
   vi.spyOn(navigator, "userAgent", "get").mockReturnValue(ua)
 }
@@ -96,7 +105,7 @@ describe("<PaystraterCheckout>", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Polygon" }))
     fireEvent.click(screen.getByRole("radio", { name: "Base" }))
     fireEvent.change(screen.getByLabelText(/Email/), { target: { value: "ada@example.com" } })
-    fireEvent.click(screen.getByRole("button", { name: "Show the deposit address" }))
+    fireEvent.click(screen.getByRole("button", { name: "Get the deposit address" }))
 
     expect(await screen.findByRole("heading", { name: "Send exactly 25.25 USDC on Base" })).toBeTruthy()
     expect(net.calls.find((c) => c.method === "POST")!.body).toEqual({ receivePaymentId: ID, chainId: 8453, payerEmail: "ada@example.com" })
@@ -118,7 +127,7 @@ describe("<PaystraterCheckout>", () => {
     fireEvent.click(await screen.findByText("Transfer to Pay"))
     fireEvent.click(screen.getByRole("radio", { name: "Base" }))
     fireEvent.change(screen.getByLabelText(/Refund address/), { target: { value: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD" } })
-    fireEvent.click(screen.getByRole("button", { name: "Show the deposit address" }))
+    fireEvent.click(screen.getByRole("button", { name: "Get the deposit address" }))
     expect(await screen.findByText(/capital letters don't match/)).toBeTruthy()
     expect(net.calls.filter((c) => c.method === "POST")).toHaveLength(0)
   })
@@ -160,7 +169,9 @@ describe("<PaystraterCheckout>", () => {
     fireEvent.click(await screen.findByText("Pay with Paystrater"))
     fireEvent.change(screen.getByLabelText("Paystrater ID or username"), { target: { value: "ada" } })
     fireEvent.click(screen.getByRole("button", { name: "Send to my app" }))
-    expect(await screen.findByText("Sent to Ada Lovelace")).toBeTruthy()
+    // The payer's name is in its own span, so only the name is capitalized
+    expect(await screen.findByText(paragraph("Sent to Ada Lovelace"))).toBeTruthy()
+    expect(screen.getByText("Ada Lovelace").className).toBe("ps-name")
     expect(screen.getByText("Open the Paystrater app").closest("a")!.getAttribute("href")).toBe(`https://app.paystrater.com/pay?id=${ID}`)
   })
 
@@ -186,25 +197,67 @@ describe("<PaystraterCheckout>", () => {
   })
 
   it.each([
-    [lockedTtp({ status: "succeeded", transferToPay: { ...lockedTtp().transferToPay!, excessRefunded: "0.75" } }), "Paid", /the extra 0.75 USDC was returned/],
+    [lockedTtp({ status: "succeeded", transferToPay: { ...lockedTtp().transferToPay!, excessRefunded: "0.75" } }), "Payment complete", /the extra 0.75 USDC was returned/],
     [lockedTtp({ status: "expired", transferToPay: { ...lockedTtp().transferToPay!, receivedAmount: "10" } }), "You sent less than the amount", /emailed you a link/],
     [lockedTtp({ status: "expired", transferToPay: { ...lockedTtp().transferToPay!, receivedAmount: "25.25" } }), "Your transfer arrived after the payment expired", /emailed you a link/],
-    [lockedTtp({ status: "expired" }), "This payment expired", /Nothing arrived in time/],
+    [lockedTtp({ status: "expired" }), "This payment has expired", /Nothing arrived in time/],
     [payment({ status: "cancelled" }), "This payment was cancelled", /Acme Shoes cancelled it/],
-    [payment({ status: "processing" }), "Payment received, confirming", /under a minute/],
+    [payment({ status: "processing" }), "Payment received", /under a minute/],
     [payment({ status: "failed", failureReason: "The transfer reverted" }), "This payment didn't go through", /The transfer reverted/]
   ])("shows the end state for %#", async (p, heading, hint) => {
     serve(() => ok(p))
     render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
     expect(await screen.findByRole("heading", { name: heading })).toBeTruthy()
-    expect(screen.getByText(hint)).toBeTruthy()
+    expect(screen.getByText(paragraph(hint))).toBeTruthy()
+  })
+
+  it.each([
+    ["choosing a method", () => ok(payment()), "Choose how to pay"],
+    ["the deposit", () => ok(lockedTtp()), "Send exactly 25.25 USDC on Base"],
+    ["the end", () => ok(payment({ status: "succeeded" })), "Payment complete"],
+    ["an error", () => fail(404, "No such payment"), "We couldn't load this payment"]
+  ])("shows Powered by Paystrater on %s", async (_, answer, heading) => {
+    serve(answer)
+    render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
+    expect(await screen.findByRole("heading", { name: heading })).toBeTruthy()
+    const link = screen.getByRole("link", { name: "Powered by Paystrater" })
+    expect(link.getAttribute("href")).toBe("https://paystrater.com")
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer")
+  })
+
+  it("goes back to the payment methods from the row under the step, and only before paying", async () => {
+    serve(() => ok(payment()))
+    render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
+    fireEvent.click(await screen.findByText("Pay with Paystrater"))
+    // "← Pay with Paystrater" sits under the step's main action, the last thing before the footer
+    const back = screen.getByRole("button", { name: "Back to payment methods, Pay with Paystrater" })
+    expect(back.previousElementSibling?.textContent).toBe("Send to my app")
+    fireEvent.click(back)
+    expect(await screen.findByRole("heading", { name: "Choose how to pay" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Back to payment methods/ })).toBeNull()
+  })
+
+  it("has no way back once the payment has ended", async () => {
+    serve(() => ok(payment({ status: "succeeded" })))
+    render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
+    expect(await screen.findByRole("heading", { name: "Payment complete" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Back to payment methods/ })).toBeNull()
+  })
+
+  it("puts the merchant's name in its own capitalized span, and only the name", async () => {
+    serve(() => ok(payment({ status: "cancelled", merchantName: "acme shoes" })))
+    render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
+    expect(await screen.findByRole("heading", { name: "This payment was cancelled" })).toBeTruthy()
+    const names = screen.getAllByText("acme shoes")
+    expect(names.map((name) => name.className).sort()).toEqual(["ps-merchant-name", "ps-name"])
+    expect(screen.getByRole("region").getAttribute("aria-label")).toBe("Pay Acme Shoes")
   })
 
   it("calls onSuccess once, for the payer's experience", async () => {
     const onSuccess = vi.fn()
     serve(() => ok(payment({ status: "succeeded" })))
     render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} onSuccess={onSuccess} />)
-    await screen.findByRole("heading", { name: "Paid" })
+    await screen.findByRole("heading", { name: "Payment complete" })
     expect(onSuccess).toHaveBeenCalledTimes(1)
   })
 

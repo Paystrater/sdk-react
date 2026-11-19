@@ -23,7 +23,7 @@ export { checkEncryptionOptions, type EncryptionCheck, type EncryptionOptions } 
 export { encryptorFor, type Encryptor } from "./encryptor.js"
 export { errorForPayer, GENERIC_SETUP_MESSAGE, type ErrorKind, type PaystraterError } from "./errors.js"
 export { apiBaseFor, checkPublishableKey, isPaymentId, PAYMENT_ID, type KeyCheck, type KeyMode } from "./keys.js"
-export { en, fill, stringsFor, type Locale, type Strings } from "./strings.js"
+export { capitalizeWords, en, fill, fillParts, stringsFor, type FillPart, type Locale, type Strings } from "./strings.js"
 export {
   contrastRatio,
   contrastWarnings,
