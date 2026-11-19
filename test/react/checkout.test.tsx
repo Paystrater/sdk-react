@@ -102,6 +102,9 @@ describe("<PaystraterCheckout>", () => {
     })
     render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
     fireEvent.click(await screen.findByText("Transfer to Pay"))
+    // Without a network, the button asks for one in words
+    fireEvent.click(screen.getByRole("button", { name: "Get the deposit address" }))
+    expect(await screen.findByText("Select a network to pay on.")).toBeTruthy()
     fireEvent.click(screen.getByRole("radio", { name: "Polygon" }))
     fireEvent.click(screen.getByRole("radio", { name: "Base" }))
     fireEvent.change(screen.getByLabelText(/Email/), { target: { value: "ada@example.com" } })
@@ -191,8 +194,12 @@ describe("<PaystraterCheckout>", () => {
       return ok(payment(started ? { method: "agentic", agentPrompt: "Pay rcv_test0001 for Acme", methods: undefined } : { methods: ["agentic"] }))
     })
     render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
-    fireEvent.click(await screen.findByRole("button", { name: "Continue" }))
+    // Before the prompt exists, the step says Continue creates it
+    expect(await screen.findByText(/^Create a one-time prompt for your agent/)).toBeTruthy()
+    expect(screen.queryByText(/^Give this prompt/)).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     expect(await screen.findByText("Pay rcv_test0001 for Acme")).toBeTruthy()
+    expect(screen.getByText(/^Give this prompt to your agent/)).toBeTruthy()
     expect(screen.getByRole("button", { name: "Copy prompt" })).toBeTruthy()
   })
 
