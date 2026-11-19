@@ -244,6 +244,12 @@ describe("<PaystraterCheckout>", () => {
     expect(screen.queryByRole("button", { name: /Back to payment methods/ })).toBeNull()
   })
 
+  it("names no shop when the payment has no merchant name, and starts the sentence with a capital", async () => {
+    serve(() => ok(payment({ status: "cancelled", merchantName: undefined })))
+    render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
+    expect(await screen.findByText(paragraph("The business cancelled it. Nothing more to pay here."))).toBeTruthy()
+  })
+
   it("puts the merchant's name in its own capitalized span, and only the name", async () => {
     serve(() => ok(payment({ status: "cancelled", merchantName: "acme shoes" })))
     render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
@@ -282,7 +288,7 @@ describe("<PaystraterCheckout>", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/Pass both encryption.keyId and encryption.publicKey/)
     unmount()
     render(<PaystraterCheckout paymentId={ID} publishableKey={PK_LIVE} encryption={{ keyId: "AbCdEf0123456789", publicKey: "" }} />)
-    expect((await screen.findByRole("alert")).textContent).toBe("This checkout is not set up correctly. Ask the shop for a new link.")
+    expect((await screen.findByRole("alert")).textContent).toBe("This checkout is not set up correctly. Ask the business you're paying for a new link.")
     expect(net.calls).toHaveLength(0)
   })
 

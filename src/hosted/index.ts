@@ -20,7 +20,7 @@ export type FragmentResult =
   | { ok: false; reason: "encryption" }
 
 export const LINK_INCOMPLETE = "This payment link is incomplete"
-export const LINK_MISCONFIGURED = "This checkout link is not set up correctly. Ask the shop for a new link."
+export const LINK_MISCONFIGURED = "This checkout link is not set up correctly. Ask the business you're paying for a new link."
 
 /**
  * Reads `#key=pk_…&kid=…&epk=…` from the link's fragment, which never reaches a

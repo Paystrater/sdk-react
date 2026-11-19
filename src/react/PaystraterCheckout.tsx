@@ -57,15 +57,18 @@ function initials(name: string) {
 function Named({ template, values, names }: { template: string; values: Record<string, string | undefined>; names: string[] }) {
   return (
     <>
-      {fillParts(template, values).map((part, index) =>
-        part.key && names.includes(part.key) ? (
+      {fillParts(template, values).map((part, index) => {
+        const name = Boolean(part.key && names.includes(part.key))
+        // A sentence starts with a capital, also when it starts with the fallback ("the business"); names get CSS capitalize
+        const text = index === 0 && !name ? part.text.charAt(0).toUpperCase() + part.text.slice(1) : part.text
+        return name ? (
           <span key={index} className="ps-name">
-            {part.text}
+            {text}
           </span>
         ) : (
-          part.text
+          text
         )
-      )}
+      })}
     </>
   )
 }
@@ -230,7 +233,7 @@ export function PaystraterCheckout(props: PaystraterCheckoutProps) {
   }, [c.stage])
 
   const p = c.payment
-  const merchant = p?.merchantName || "the shop"
+  const merchant = p?.merchantName || "the business"
   const origin = typeof location !== "undefined" ? location.origin : undefined
   const errorText = (e?: PaystraterError) => (e ? errorForPayer(e, c.mode, origin) : undefined)
 
@@ -668,7 +671,7 @@ function Result({ c, t, title, merchant, onStartAgain }: Omit<StepProps, "action
   let tone = "ps-neutral"
   let heading: string = t.statusFailed
   let hint: ReactNode = p.failureReason
-  // The merchant's name in capitals; the fallback ("the shop") stays as written
+  // The merchant's name in capitals; the fallback ("the business") stays as written
   const withMerchant = (template: string) => <Named template={template} values={{ merchant }} names={p.merchantName ? ["merchant"] : []} />
   if (p.status === "succeeded") {
     mark = "✓"

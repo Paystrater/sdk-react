@@ -30,7 +30,7 @@ export interface PaystraterError {
   retryAfter?: number
 }
 
-export const GENERIC_SETUP_MESSAGE = "This checkout is not set up correctly. Ask the shop for a new link."
+export const GENERIC_SETUP_MESSAGE = "This checkout is not set up correctly. Ask the business you're paying for a new link."
 
 export function setupError(message: string): PaystraterError {
   return { kind: "setup", status: 0, message }
