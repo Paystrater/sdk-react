@@ -26,7 +26,8 @@ export function formatAmount(amount: string): string {
   const match = DECIMAL.exec(amount.trim())
   if (!match) return amount
   const grouped = (match[1] ?? "0").replace(/\B(?=(\d{3})+(?!\d))/g, ",")
-  return match[2] ? `${grouped}.${match[2]}` : grouped
+  // At least two decimals, as money is read ("0.5" → "0.50"); every decimal the server sent is kept
+  return `${grouped}.${(match[2] ?? "").padEnd(2, "0")}`
 }
 
 /** Compares two decimal strings without floating point: -1, 0 or 1. Undefined when either is not a plain decimal */

@@ -4,8 +4,8 @@ import { compareAmounts, formatAmount, isPositiveAmount, toBaseUnits, walletLink
 import { checkEncryptionOptions } from "../../src/core/encryptionConfig.js"
 import { errorForPayer, GENERIC_SETUP_MESSAGE } from "../../src/core/errors.js"
 import { apiBaseFor, checkPublishableKey, isPaymentId } from "../../src/core/keys.js"
-import { fill, stringsFor } from "../../src/core/strings.js"
-import { contrastRatio, contrastWarnings, cssVariableName, DARK, LIGHT, resolveTheme } from "../../src/core/theme.js"
+import { capitalizeWords, fill, fillParts, stringsFor } from "../../src/core/strings.js"
+import { contrastRatio, contrastWarnings, cssVariableName, DARK, LIGHT, readableOn, resolveTheme } from "../../src/core/theme.js"
 
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("")
 
@@ -151,6 +151,21 @@ describe("strings", () => {
     expect(fill("Pay {merchant}", { merchant: "<b>Acme</b>" })).toBe("Pay <b>Acme</b>")
     expect(stringsFor("en", { testMode: "Sandbox" }).testMode).toBe("Sandbox")
   })
+  it("capitalizes every word of a name as CSS capitalize does, keeping the rest", () => {
+    expect(capitalizeWords("acme shoes")).toBe("Acme Shoes")
+    expect(capitalizeWords("ada's  coffee bar")).toBe("Ada's  Coffee Bar")
+    expect(capitalizeWords("ACME ltd")).toBe("ACME Ltd")
+    expect(capitalizeWords("")).toBe("")
+  })
+  it("fills in pieces, so a name can be shown on its own", () => {
+    expect(fillParts("{merchant} cancelled it.", { merchant: "acme" })).toEqual([{ text: "acme", key: "merchant" }, { text: " cancelled it." }])
+    expect(fillParts("Start again from {merchant}.", { merchant: "acme" })).toEqual([
+      { text: "Start again from " },
+      { text: "acme", key: "merchant" },
+      { text: "." }
+    ])
+    expect(fillParts("No {name}", {})).toEqual([{ text: "No " }])
+  })
 })
 
 describe("theme", () => {
@@ -161,7 +176,16 @@ describe("theme", () => {
     expect(DARK.colorPrimary).toBe("#A2AED1")
     expect(DARK.colorOnPrimary).toBe("#131519")
   })
-  it("follows prefers-color-scheme on auto and takes the merchant's variables", () => {
+  it("matches the sandbox app's surfaces, card line and radii", () => {
+    expect([LIGHT.colorSurface, LIGHT.colorSurfaceHover, LIGHT.colorBorderStrong]).toEqual(["#F5F7FA", "#E4E9EF", "#C5C6D0"])
+    expect([DARK.colorSurface, DARK.colorSurfaceHover, DARK.colorBorder]).toEqual(["#1E2128", "#2C303A", "rgba(162, 174, 209, 0.18)"])
+    expect([LIGHT.borderRadius, LIGHT.borderRadiusSurface, LIGHT.borderRadiusButton, LIGHT.borderRadiusCard]).toEqual(["14px", "14px", "24px", "18px"])
+  })
+  it("follows prefers-color-scheme by default and on auto, and takes the merchant's variables", () => {
+    expect(resolveTheme(undefined, true).colorBackground).toBe(DARK.colorBackground)
+    expect(resolveTheme({}, false).colorBackground).toBe(LIGHT.colorBackground)
+    expect(resolveTheme({ theme: "light" }, true).colorBackground).toBe(LIGHT.colorBackground)
+    expect(resolveTheme({ theme: "dark" }, false).colorBackground).toBe(DARK.colorBackground)
     expect(resolveTheme({ theme: "auto" }, true).colorBackground).toBe(DARK.colorBackground)
     expect(resolveTheme({ theme: "auto" }, false).colorBackground).toBe(LIGHT.colorBackground)
     expect(resolveTheme({ variables: { colorPrimary: "#ff0000" } }, false).colorPrimary).toBe("#ff0000")
@@ -176,8 +200,51 @@ describe("theme", () => {
     expect(contrastWarnings(LIGHT)).toEqual([])
     expect(contrastWarnings(DARK)).toEqual([])
     expect(contrastRatio("#000", "#fff")).toBeCloseTo(21)
-    const warnings = contrastWarnings(resolveTheme({ variables: { colorPrimary: "#9fc5ff" } }, false))
+    const warnings = contrastWarnings(resolveTheme({ variables: { colorPrimary: "#9fc5ff", colorOnPrimary: "#ffffff" } }, false))
     expect(warnings.join(" ")).toMatch(/Button text/)
+  })
+  it("works out the hover and text colours of a merchant's own primary colour", () => {
+    // Without this, dark mode showed the merchant's colour at rest and periwinkle on hover, with dark text on it
+    const dark = resolveTheme({ variables: { colorPrimary: "#0F766E" } }, true)
+    expect(dark.colorPrimaryHover).toBe("color-mix(in srgb, #0F766E 85%, #FFFFFF)")
+    expect(dark.colorOnPrimary).toBe("#FFFFFF")
+    expect(contrastWarnings(dark).join(" ")).not.toMatch(/Button text/)
+    const light = resolveTheme({ variables: { colorPrimary: "#9fc5ff" } }, false)
+    expect(light.colorPrimaryHover).toBe("color-mix(in srgb, #9fc5ff 85%, #000000)")
+    expect(light.colorOnPrimary).toBe("#131519")
+    // What the merchant sets wins
+    const own = resolveTheme({ variables: { colorPrimary: "#285BB6", colorPrimaryHover: "#112233", colorOnPrimary: "#FFEEDD" } }, true)
+    expect([own.colorPrimaryHover, own.colorOnPrimary]).toEqual(["#112233", "#FFEEDD"])
+    // The defaults are untouched without a merchant colour
+    expect(resolveTheme(undefined, true).colorPrimaryHover).toBe(DARK.colorPrimaryHover)
+  })
+  it("gives dark mode the brand's dark colours when the setup code names Paystrater's light blue", () => {
+    // Generated setup code passes colorPrimary "#285BB6": in dark mode the periwinkle buttons apply
+    const dark = resolveTheme({ theme: "auto", variables: { colorPrimary: "#285BB6" } }, true)
+    expect([dark.colorPrimary, dark.colorPrimaryHover, dark.colorOnPrimary]).toEqual([DARK.colorPrimary, DARK.colorPrimaryHover, DARK.colorOnPrimary])
+    expect(resolveTheme({ variables: { colorPrimary: "#285bb6" } }, false).colorPrimary).toBe("#285bb6")
+  })
+  it("keeps the amount (colorPrimaryText) readable on the card in both themes, whatever the merchant's colour", () => {
+    for (const theme of [LIGHT, DARK]) expect(contrastRatio(theme.colorPrimaryText, theme.colorBackground)!).toBeGreaterThanOrEqual(4.5)
+    // A light yellow brand is shaded darker until it reads on white, and kept as it is on the dark card
+    const light = resolveTheme({ variables: { colorPrimary: "#FFD400" } }, false)
+    expect(light.colorPrimaryText).not.toBe("#FFD400")
+    expect(contrastRatio(light.colorPrimaryText, light.colorBackground)!).toBeGreaterThanOrEqual(4.5)
+    const dark = resolveTheme({ variables: { colorPrimary: "#FFD400" } }, true)
+    expect(dark.colorPrimaryText).toBe("#FFD400")
+    // A dark navy brand is lifted on the dark card
+    const navy = resolveTheme({ variables: { colorPrimary: "#0B1F4D" } }, true)
+    expect(contrastRatio(navy.colorPrimaryText, navy.colorBackground)!).toBeGreaterThanOrEqual(4.5)
+    expect(readableOn("var(--brand)", "#FFFFFF", false)).toBeUndefined()
+    // The merchant's own text colour wins
+    expect(resolveTheme({ variables: { colorPrimary: "#FFD400", colorPrimaryText: "#806A00" } }, false).colorPrimaryText).toBe("#806A00")
+  })
+  it("takes dark-only variables on top of the shared ones, in dark mode only", () => {
+    const appearance = { variables: { colorPrimary: "#0F766E" }, variablesDark: { colorPrimary: "#5EEAD4", colorOnPrimary: "#042F2E" } }
+    expect(resolveTheme(appearance, true).colorPrimary).toBe("#5EEAD4")
+    expect(resolveTheme(appearance, true).colorOnPrimary).toBe("#042F2E")
+    expect(resolveTheme(appearance, false).colorPrimary).toBe("#0F766E")
+    expect(resolveTheme({ variablesDark: { colorPrimary: "red; x" } }, true).colorPrimary).toBe(DARK.colorPrimary)
   })
 })
 
