@@ -1,7 +1,7 @@
 {
   "name": "@paystrater/react",
-  "version": "0.1.0-next.7",
-  "description": "Paystrater checkout for React: one component and one hook for Pay with Paystrater, Transfer to Pay and agent payments.",
+  "version": "1.0.0",
+  "description": "Accept stablecoin and crypto payments in React with Paystrater, including USDC, USDT, ETH, BNB and SOL. A single checkout component and hook support Pay with Paystrater, Transfer to Pay and AI agent payments.",
   "license": "MIT",
   "author": "Paystrater",
   "homepage": "https://docs.paystrater.com/docs/sdks/react",
@@ -14,8 +14,16 @@
     "paystrater",
     "checkout",
     "payments",
+    "crypto-payments",
     "stablecoin",
-    "react"
+    "usdc",
+    "usdt",
+    "ethereum",
+    "bnb",
+    "solana",
+    "react",
+    "nextjs",
+    "ai-agents"
   ],
   "type": "module",
   "sideEffects": false,
