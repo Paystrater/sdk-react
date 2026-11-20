@@ -179,12 +179,71 @@ More in the [errors reference](https://docs.paystrater.com/docs/errors).
 
 ## Content Security Policy
 
-The component works under a strict policy: no `eval`, no inline scripts, no remote scripts, no iframes.
+The checkout needs very little from your policy: no `eval`, no inline or remote scripts, no iframes, no fonts and no workers. Here is what it does, so you know what to allow:
+
+| Directive | What to allow | Why |
+| --- | --- | --- |
+| `connect-src` | `https://api.paystrater.com` (live keys), `https://staging-api.paystrater.com` (test keys) | Every call goes to the API host your key picks, or to `apiBaseUrl` if you set it |
+| `style-src` | `'nonce-…'` (and pass the same value as the `nonce` prop), or `'unsafe-inline'` | The checkout renders one `<style>` element |
+| `style-src-attr` | `'unsafe-inline'`, only if you server-render the checkout under a nonce-only `style-src` | Theme colours are inline `style` attributes. In the browser React sets them through the DOM, which a policy allows; in server-rendered HTML they are attributes that a nonce-only `style-src` blocks |
+| `img-src` | `https:`, or your merchant logo's host | The business logo is an `<img>`. The QR code, icons and Paystrater logo are inline SVG and need nothing |
+| `script-src` | Your own bundle, as now | The encryption code is a separate chunk of your bundle, loaded with `import()` only when you pass `encryption` |
+
+Links (Powered by Paystrater, Open the Paystrater app, Open in wallet) are plain links and need no policy.
+
+A policy that works with the checkout, for test keys (add `https://api.paystrater.com` to `connect-src` for live keys):
 
 ```
-connect-src https://api.paystrater.com https://staging-api.paystrater.com
-img-src https:            (the merchant logo; or the logo's host)
-style-src 'nonce-…'       (pass the same nonce as the `nonce` prop; the theme also uses inline style attributes)
+Content-Security-Policy:
+  default-src 'self';
+  script-src 'self' 'nonce-{NONCE}';
+  style-src 'self' 'nonce-{NONCE}';
+  style-src-attr 'unsafe-inline';
+  connect-src 'self' https://staging-api.paystrater.com;
+  img-src 'self' https:;
+  font-src 'self';
+  object-src 'none';
+  base-uri 'self';
+  frame-ancestors 'none'
+```
+
+`style-src-attr 'unsafe-inline'` is only needed when the checkout is server-rendered (Next.js and other SSR frameworks) under a nonce-only `style-src`. If your `style-src` already has `'unsafe-inline'`, as many Next.js apps do, add nothing for styles.
+
+In Next.js, set the header in `proxy.ts` (`middleware.ts` before Next.js 16) and pass the nonce to the component:
+
+```ts
+// proxy.ts
+import { NextRequest, NextResponse } from "next/server"
+
+export function proxy(request: NextRequest) {
+  const nonce = crypto.randomUUID()
+  const policy = [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    `style-src 'self' 'nonce-${nonce}'`,
+    "style-src-attr 'unsafe-inline'",
+    "connect-src 'self' https://api.paystrater.com https://staging-api.paystrater.com",
+    "img-src 'self' https:",
+    "font-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'"
+  ].join("; ")
+  const headers = new Headers(request.headers)
+  headers.set("x-nonce", nonce)
+  const response = NextResponse.next({ request: { headers } })
+  response.headers.set("Content-Security-Policy", policy)
+  return response
+}
+```
+
+```tsx
+// In a server component: read the nonce and hand it to the checkout
+import { headers } from "next/headers"
+
+const nonce = (await headers()).get("x-nonce") ?? undefined
+return <Checkout paymentId={paymentId} nonce={nonce} />
+// …and in the client component: <PaystraterCheckout paymentId={paymentId} publishableKey="pk_live_…" nonce={nonce} />
 ```
 
 ## Server rendering

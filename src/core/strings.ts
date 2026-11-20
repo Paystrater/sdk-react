@@ -20,12 +20,12 @@ export const en = {
   continue: "Continue",
 
   payerLabel: "Paystrater ID or username",
-  payerHelp: "We'll send the request to your app. Approve it there with your PIN.",
+  payerHelp: "We'll send the request to your app. Approve it there.",
   payerRequired: "Enter your Paystrater ID or username.",
   sendRequest: "Send to my app",
   sentTo: "Sent to {name}",
   approveInApp: "Approve it in your Paystrater app",
-  approveInAppHint: "Open the request, check the amount and approve it with your PIN. This page updates by itself.",
+  approveInAppHint: "Open the request, check the amount and approve it. This page updates by itself.",
   openApp: "Open the Paystrater app",
   wrongAccount: "Not your account? Go back and start the payment again with the right Paystrater ID.",
 
