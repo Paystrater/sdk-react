@@ -9,6 +9,7 @@ import type { Deposit, FieldProblem } from "../core/checkout.js"
 import type { EncryptionOptions } from "../core/encryptionConfig.js"
 import { errorForPayer, type PaystraterError } from "../core/errors.js"
 import { capitalizeWords, fill, fillParts, stringsFor, type Locale, type Strings } from "../core/strings.js"
+import { AGENT_GUIDE_URL, agentMcpUrl } from "../core/agentConnect.js"
 import { contrastWarnings, resolveTheme, toCssVariables, type Appearance } from "../core/theme.js"
 import type { CheckoutPayment, PaymentMethod } from "../core/types.js"
 import { ArrowLeft, MethodIcon, PoweredBy } from "./brand.js"
@@ -647,6 +648,7 @@ function Agent({ c, t, title, actionError, back }: StepProps) {
           {prompt}
         </pre>
         <CopyButton value={prompt} label={t.copyPrompt} copied={t.copied} />
+        <AgentConnect c={c} t={t} />
         {actionError}
       </div>
     )
@@ -659,8 +661,59 @@ function Agent({ c, t, title, actionError, back }: StepProps) {
       <button type="button" className="ps-btn ps-primary" disabled={c.busy} onClick={() => void c.startAgentic()}>
         {t.continue}
       </button>
+      <AgentConnect c={c} t={t} />
       {back(t.methodAgentic)}
     </div>
+  )
+}
+
+/** "How to connect your AI agent": closed until the customer opens it; a native details element, so no script and full keyboard support */
+function AgentConnect({ c, t }: { c: PaystraterPayment; t: Strings }) {
+  const url = agentMcpUrl(c.mode)
+  const steps = [
+    [t.agentConnectStep1Title, t.agentConnectStep1],
+    [t.agentConnectStep2Title, t.agentConnectStep2],
+    [t.agentConnectStep3Title, t.agentConnectStep3],
+    [t.agentConnectStep4Title, t.agentConnectStep4]
+  ]
+  return (
+    <details className="ps-acc">
+      <summary className="ps-acc-head">
+        {t.agentConnectTitle}
+        <span className="ps-acc-chev" aria-hidden="true" />
+      </summary>
+      <div className="ps-acc-body">
+        <ol className="ps-acc-steps">
+          {steps.map(([lead, body], i) => (
+            <li key={i}>
+              <span className="ps-acc-num" aria-hidden="true">
+                {i + 1}
+              </span>
+              <p>
+                <strong>{lead}</strong> {body}
+              </p>
+              {i === 0 && (
+                <div className="ps-acc-url">
+                  {/* Shown without https:// so it fits a phone; Copy copies the full URL */}
+                  <span className="ps-mono">{url.replace(/^https:\/\//, "")}</span>
+                  <CopyButton value={url} label={t.copy} copied={t.copied} />
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+        <div className="ps-acc-wallet">
+          <span className="ps-acc-label">{t.agentWalletTitle}</span>
+          <p>
+            <strong>{t.agentWalletLead}</strong> {t.agentWalletBody}
+          </p>
+          <p className="ps-acc-small">{t.agentWalletLimits}</p>
+        </div>
+        <a className="ps-link" href={AGENT_GUIDE_URL} target="_blank" rel="noopener noreferrer">
+          {t.agentGuide}
+        </a>
+      </div>
+    </details>
   )
 }
 
