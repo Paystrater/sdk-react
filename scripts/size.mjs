@@ -1,11 +1,11 @@
 // Size budgets, checked in CI: the whole React checkout under
-// 20 KB gzipped, with the encryption code in its own chunk that loads only when
+// 22 KB gzipped (raised from 20 KB for the "How to connect your AI agent" guide), with the encryption code in its own chunk that loads only when
 // encryption options are passed. Measured as a merchant's bundler would ship
 // it: minified, React left out, then gzipped. Fails the build when over.
 import { build } from "esbuild"
 import { gzipSync } from "node:zlib"
 
-const BUDGETS = { checkout: 20 * 1024, encryption: 10 * 1024 }
+const BUDGETS = { checkout: 22 * 1024, encryption: 10 * 1024 }
 
 const result = await build({
   entryPoints: { index: "src/react/index.ts" },

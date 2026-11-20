@@ -187,6 +187,32 @@ describe("<PaystraterCheckout>", () => {
     expect(net.calls.filter((c) => c.method === "POST")).toHaveLength(0)
   })
 
+  it("keeps How to connect your AI agent closed until opened, with the sandbox server on a test key", async () => {
+    serve(() => ok(payment({ methods: ["agentic"] })))
+    const writeText = vi.fn(async () => undefined)
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } })
+    const { container } = render(<PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} />)
+    await screen.findByRole("button", { name: "Continue" })
+    const details = container.querySelector("details.ps-acc") as HTMLDetailsElement
+    expect(details.open).toBe(false)
+    fireEvent.click(screen.getByText("How to connect your AI agent"))
+    expect(details.open).toBe(true)
+    expect(screen.getByText("staging-agentic.paystrater.com/mcp")).toBeTruthy()
+    expect(screen.getByText(/Prefer a separate wallet for your agent\?/)).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Read the full guide" }).getAttribute("href")).toBe("https://paystrater.com/mcp")
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }))
+    expect(writeText).toHaveBeenCalledWith("https://staging-agentic.paystrater.com/mcp")
+  })
+
+  it("shows the live MCP server on a live key", async () => {
+    serve(() => ok(payment({ methods: ["agentic"], livemode: true })))
+    render(<PaystraterCheckout paymentId={ID} publishableKey={PK_LIVE} />)
+    await screen.findByRole("button", { name: "Continue" })
+    fireEvent.click(screen.getByText("How to connect your AI agent"))
+    expect(screen.getByText("agentic.paystrater.com/mcp")).toBeTruthy()
+    expect(screen.queryByText(/staging-agentic/)).toBeNull()
+  })
+
   it("shows the agent prompt with a copy button", async () => {
     let started = false
     serve((req) => {
