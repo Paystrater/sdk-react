@@ -98,7 +98,7 @@ function useCountdown(expiresAt: string | undefined, onEnd: () => void): number 
     const tick = () => {
       const s = Math.max(0, Math.ceil((end - Date.now()) / 1000))
       setLeft(s)
-      // Read the payment once at the end: the server expires it on that read
+      // Read the payment once at the end. The server decides when it has expired; this only shows it
       if (s === 0 && !ended) {
         ended = true
         onEndRef.current()
@@ -245,7 +245,8 @@ export function PaystraterCheckout(props: PaystraterCheckoutProps) {
       aria-label={p ? fill(t.payTo, { merchant: p.merchantName ? capitalizeWords(p.merchantName) : merchant }) : t.loading}
       aria-busy={c.stage === "loading" && !c.error}
     >
-      <style nonce={props.nonce}>{CSS}</style>
+      {/* As raw HTML: React 18 escapes a style's text on the server (> becomes &gt;), which breaks its rules and hydration */}
+      <style nonce={props.nonce} dangerouslySetInnerHTML={{ __html: CSS }} />
       {testMode && <div className="ps-ribbon" title={t.testModeHint}>{t.testMode}</div>}
       <p className="ps-sr" role="status" aria-live="polite">
         {liveText(c, t)}
@@ -263,7 +264,7 @@ function liveText(c: PaystraterPayment, t: Strings): string {
     case "processing":
       return t.statusProcessing
     case "final":
-      return c.status === "succeeded" ? t.statusSucceeded : c.underpaid ? t.statusUnderpaid : c.late ? t.statusLate : c.status === "expired" ? t.statusExpired : c.status === "cancelled" ? t.statusCancelled : t.statusFailed
+      return c.status === "succeeded" ? t.statusSucceeded : c.underpaid ? t.statusUnderpaid : c.status === "expired" ? t.statusExpired : c.status === "cancelled" ? t.statusCancelled : t.statusFailed
     case "transfer_to_pay":
       return c.deposit ? t.waitingForDeposit : ""
     case "updating":
@@ -735,12 +736,9 @@ function Result({ c, t, title, merchant, onStartAgain }: Omit<StepProps, "action
     tone = "ps-bad"
     heading = t.statusUnderpaid
     hint = t.statusUnderpaidHint
-  } else if (c.late) {
-    heading = t.statusLate
-    hint = t.statusLateHint
   } else if (p.status === "expired") {
     heading = t.statusExpired
-    hint = withMerchant(t.statusExpiredHint)
+    hint = withMerchant(p.method === "transfer_to_pay" ? t.statusExpiredTransferHint : t.statusExpiredHint)
   } else if (p.status === "cancelled") {
     heading = t.statusCancelled
     hint = withMerchant(t.statusCancelledHint)
@@ -757,7 +755,7 @@ function Result({ c, t, title, merchant, onStartAgain }: Omit<StepProps, "action
       </span>
       {title(heading)}
       {hint && <p className="ps-muted">{hint}</p>}
-      {p.status === "expired" && !c.underpaid && !c.late && onStartAgain && (
+      {p.status === "expired" && !c.underpaid && onStartAgain && (
         <button type="button" className="ps-btn ps-secondary" onClick={onStartAgain}>
           {t.startAgain}
         </button>

@@ -4,7 +4,7 @@
 // takes an amount from the browser: it reads the payment and starts a method.
 import { alwaysActive, type ActivitySource } from "./activity.js"
 import { checkEvmAddress } from "./address.js"
-import { compareAmounts, isPositiveAmount } from "./amount.js"
+import { isPositiveAmount } from "./amount.js"
 import type { CallResult, CheckoutClient, RateLimit } from "./client.js"
 import type { PaystraterError } from "./errors.js"
 import type { KeyMode } from "./keys.js"
@@ -66,10 +66,8 @@ export interface CheckoutState {
   mode?: KeyMode
   /** Polling slowed to every 10 seconds because RateLimit-Remaining fell under 50 */
   slowed: boolean
-  /** Expired with less than the amount received: the payer gets a return link by email */
+  /** Expired while short of the amount, as the server reports it: the payer gets a return link by email */
   underpaid: boolean
-  /** Expired, and the whole amount arrived after the deadline: also returned by email */
-  late: boolean
 }
 
 export interface CheckoutCallbacks {
@@ -175,12 +173,12 @@ export function depositFrom(payment: CheckoutPayment | undefined, started?: Tran
   return undefined
 }
 
-/** An expired Transfer to Pay that received money: short (underpaid) or in full after the deadline (late) */
-function arrival(payment: CheckoutPayment | undefined): { underpaid: boolean; late: boolean } {
-  const t = payment?.transferToPay
-  if (payment?.status !== "expired" || !t || !isPositiveAmount(t.receivedAmount)) return { underpaid: false, late: false }
-  const full = compareAmounts(t.receivedAmount!, t.expectedAmount)
-  return full !== undefined && full >= 0 ? { underpaid: false, late: true } : { underpaid: true, late: false }
+/**
+ * An expired Transfer to Pay that received money was short. The server decides: it checks the address before
+ * releasing it, and an amount that covers the payment completes it instead of expiring it.
+ */
+function isUnderpaid(payment: CheckoutPayment | undefined): boolean {
+  return payment?.status === "expired" && isPositiveAmount(payment.transferToPay?.receivedAmount)
 }
 
 function stageFor(payment: CheckoutPayment | undefined, chosen: PaymentMethod | undefined, methods: PaymentMethod[]): Stage {
@@ -227,8 +225,7 @@ export class Checkout {
       busy: false,
       mode: options.client.mode,
       slowed: false,
-      underpaid: false,
-      late: false
+      underpaid: false
     }
   }
 
@@ -337,7 +334,7 @@ export class Checkout {
       // Without a payment the page is loading, or unavailable once a read failed for good
       stage: next.payment ? stageFor(next.payment, chosen, methods) : next.stage === "unavailable" ? "unavailable" : "loading",
       deposit: depositFrom(next.payment, this.started),
-      ...arrival(next.payment)
+      underpaid: isUnderpaid(next.payment)
     }
     for (const listener of this.listeners) listener(this.state)
   }

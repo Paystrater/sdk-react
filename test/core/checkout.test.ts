@@ -250,21 +250,22 @@ describe("Transfer to Pay", () => {
     expect(t.events).toEqual(["success"])
   })
 
-  it("tells an underpaid expiry from a late one and from an empty one", async () => {
+  it("tells an underpaid expiry from an empty one", async () => {
     const short = setup(() => ok(locked({ status: "expired", transferToPay: { ...locked().transferToPay!, receivedAmount: "10" } })))
     short.checkout.start()
     await settle()
-    expect(short.state()).toMatchObject({ stage: "final", underpaid: true, late: false })
+    expect(short.state()).toMatchObject({ stage: "final", underpaid: true })
 
-    const late = setup(() => ok(locked({ status: "expired", transferToPay: { ...locked().transferToPay!, receivedAmount: "25.25" } })))
-    late.checkout.start()
+    // A short deposit topped up before its return is confirmed: still the return the server offers
+    const toppedUp = setup(() => ok(locked({ status: "expired", transferToPay: { ...locked().transferToPay!, receivedAmount: "25.25" } })))
+    toppedUp.checkout.start()
     await settle()
-    expect(late.state()).toMatchObject({ underpaid: false, late: true })
+    expect(toppedUp.state()).toMatchObject({ underpaid: true })
 
     const none = setup(() => ok(locked({ status: "expired" })))
     none.checkout.start()
     await settle()
-    expect(none.state()).toMatchObject({ underpaid: false, late: false })
+    expect(none.state()).toMatchObject({ underpaid: false })
   })
 })
 
