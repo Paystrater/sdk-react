@@ -19,7 +19,15 @@ export interface paths {
          *     - **Scope needed on the API key:** `receive-crypto:create`, or `all-scopes`.
          *     - **Rate limit:** 600 requests a minute per public key, customer IP and route, in production and the sandbox.
          *
-         *     Starts Transfer to Pay for the customer. Call it when they pick Transfer to Pay and a chain. Show them the deposit address and the exact `totalAmount` to send before `expiresAt`. Asking again returns the same deposit. If the payment had no method, it becomes a `transfer_to_pay` payment.
+         *     Starts Transfer to Pay for the customer. Call it when they pick Transfer to Pay and a chain. Show them the deposit address and the exact `totalAmount` to send before `expiresAt`, and stop showing them then. Asking again returns the same deposit. If the payment had no method, it becomes a `transfer_to_pay` payment.
+         *
+         *     Just after `expiresAt`, the address is checked one last time before it is released for other payments:
+         *
+         *     - **The full amount is there:** the payment is fulfilled as usual. It goes to `processing`, then `succeeded` with `incoming_payment.succeeded`, and no `incoming_payment.expired` is sent. If it cannot be paid out to you, it goes to `failed` with `incoming_payment.failed`, and our team reviews it.
+         *     - **Less is there:** the payment goes to `expired` with `incoming_payment.underpaid`. The address is kept, and the customer gets the money back with `POST /checkout/payments/{id}/refund-address`.
+         *     - **Nothing is there:** the payment goes to `expired` with `incoming_payment.expired`, and the address is released.
+         *
+         *     Once the address is released, nothing can be done about money sent to it. It can already be another payment's.
          */
         post: operations["startTransferToPay"];
         delete?: never;
@@ -167,7 +175,7 @@ export interface paths {
          *     - **Scope needed on the API key:** `receive-payments:read`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route, and list reads at most 10 a second.
          *
-         *     Lists the payments you asked to receive, newest first. Filter by `status`, and pass `nextCursor` as `cursor` for the next page.
+         *     Lists the payments you asked to receive, newest first. Filter by `status`, and pass `nextCursor` as `cursor` for the next page. A page holds at most 50.
          */
         get: operations["listReceivePayments"];
         put?: never;
@@ -217,7 +225,7 @@ export interface paths {
          *     - **Scope needed on the API key:** `receive-payments:write`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
          *
-         *     Cancels a payment nobody has started paying. After this it can no longer be paid, and `status` is `cancelled`.
+         *     Cancels a payment nobody has started paying. After this it can no longer be paid, and `status` is `cancelled`. A Transfer to Pay payment is checked first: if its deposit address already holds money, this answers 400 and the payment stays open. A full deposit is then paid to you, and a short one is returned to the customer after the payment expires.
          */
         post: operations["cancelReceivePayment"];
         delete?: never;
@@ -239,7 +247,7 @@ export interface paths {
          *     - **Scope needed on the API key:** `receive-payments:read`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
          *
-         *     Retrieves the chains and tokens you accept, and who pays the fee. You change them in the dashboard.
+         *     Retrieves the chains and tokens you accept, and who pays the fee. Also your subscription settings: what subscriptions bill in, who pays the fee on their charges, whether customers can pause, and the business address and tax ID on receipts. You change them in the dashboard.
          */
         get: operations["getPaymentSettings"];
         put?: never;
@@ -312,7 +320,7 @@ export interface paths {
          *     - **Scope needed on the API key:** `transaction:read`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route, and list reads at most 10 a second.
          *
-         *     Lists your payouts, newest first. Pass `nextCursor` as `cursor` for the next page.
+         *     Lists your payouts, newest first. Pass `nextCursor` as `cursor` for the next page. A page holds at most 50.
          */
         get: operations["listSendPayments"];
         put?: never;
@@ -360,7 +368,7 @@ export interface paths {
          *     - **Scope needed on the API key:** `refunds:read`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route, and list reads at most 10 a second.
          *
-         *     Lists your refunds, newest first. Filter by `receivePaymentId`, and pass `nextCursor` as `cursor` for the next page.
+         *     Lists your refunds, newest first. Filter by `receivePaymentId`, and pass `nextCursor` as `cursor` for the next page. A page holds at most 50.
          */
         get: operations["listRefunds"];
         put?: never;
@@ -420,7 +428,7 @@ export interface paths {
          *     - **IP allowlist:** required. This route moves money, so the API key needs at least one allowed IP address, and the call must come from one of them.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
          *
-         *     Swaps one token for another in your wallet, on one chain or across two. Follow it with `GET /transactions/{id}` or the swap webhook events.
+         *     Swaps one token for another in your wallet, on one chain or across two. Follow it with `GET /transactions/{id}` or the swap webhook events. Swaps work on mainnets only, with a test key too. This is the sandbox's one exception: a swap there moves real money from your wallet. If you must test one, use a small amount, such as 0.1 or 0.5 USDT. A swap that names a test chain gets a 400 that lists the chains swaps run on.
          */
         post: operations["createSwap"];
         delete?: never;
@@ -563,7 +571,7 @@ export interface paths {
          *     - **Scope needed on the API key:** `transaction:read`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route, and list reads at most 10 a second.
          *
-         *     Lists your scheduled payments, newest first. Filter by `status`, and pass `nextCursor` as `cursor` for the next page.
+         *     Lists your scheduled payments, newest first. Filter by `status`, and pass `nextCursor` as `cursor` for the next page. A page holds at most 50.
          */
         get: operations["listScheduledPayments"];
         put?: never;
@@ -611,7 +619,7 @@ export interface paths {
          *     - **Scope needed on the API key:** `transaction:read`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route, and list reads at most 10 a second.
          *
-         *     Lists the latest cycles of a scheduled payment, newest first.
+         *     Lists the latest cycles of a scheduled payment, newest first, at most 50.
          */
         get: operations["listRuns"];
         put?: never;
@@ -708,7 +716,7 @@ export interface paths {
          *     - **Scope needed on the API key:** `subscriptions:read`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route, and list reads at most 10 a second.
          *
-         *     Lists the subscriptions you bill, newest first. Filter by `status`, and pass `nextCursor` as `cursor` for the next page.
+         *     Lists the subscriptions you bill, newest first. Filter by `status`, and pass `nextCursor` as `cursor` for the next page. A page holds at most 50.
          */
         get: operations["listMerchantSubscriptions"];
         put?: never;
@@ -719,6 +727,8 @@ export interface paths {
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
          *
          *     Asks a customer to subscribe. They approve it in their Paystrater app, and `status` moves from `pending_approval` to `active`. Name a plan with `planId` (the `id` from `POST /plans`), or give the price yourself with `amount`, `tokenTicker` and `frequency`; not both. A plan is the reusable price, and a subscription is one customer agreeing to pay it.
+         *
+         *     When the payer is an agent wallet (an account an AI agent created by email, with no app), the response carries `agentPrompt`: hand it to the payer's agent. The agent reads the subscription by its ID and approves exactly those terms. Within the agent's per-payment limit it is approved at once; above it the wallet's owner is emailed a code the agent confirms with. The owner is emailed what was approved and a link to cancel it, and an approved subscription shows `approvedBy: "agent"`. A pending subscription is never listed to an agent: it is found only by the ID in the prompt.
          */
         post: operations["createSubscription"];
         delete?: never;
@@ -764,7 +774,7 @@ export interface paths {
          *     - **Scope needed on the API key:** `subscriptions:read`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route, and list reads at most 10 a second.
          *
-         *     Lists the latest charges of a subscription, newest first.
+         *     Lists the latest charges of a subscription, newest first, at most 50.
          */
         get: operations["listSubscriptionRuns"];
         put?: never;
@@ -814,7 +824,9 @@ export interface paths {
          *     - **Scope needed on the API key:** `subscriptions:write`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
          *
-         *     Pauses a subscription. Nothing is charged until you resume it.
+         *     Pauses a subscription. Nothing is charged while it is paused. Without a body it stays paused until you resume it. With `resumeAt` (a date such as `2027-02-01`, the start of that day in the subscription's time zone, or an RFC 3339 time, from 1 day to 1 year ahead) it resumes on its own then, exactly as `POST /subscriptions/{id}/resume` would: renewals missed while paused are skipped, not charged afterwards. Resuming early clears the date.
+         *
+         *     Your customer can also pause in their app, until a date at most 90 days ahead, unless you turn that off in the dashboard. They can do so only when paid up: not while the subscription is past due or a charge for the current period is still being collected or retried. Who paused decides who resumes: you cannot resume a customer's pause, and they cannot resume yours. `pausedBy` says who it was while it is paused and on `subscription.paused`; `subscription.resumed` tells you when it ends, without `pausedBy`.
          */
         post: operations["pauseSubscription"];
         delete?: never;
@@ -847,6 +859,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/subscriptions/{id}/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change a subscription's amount, frequency or plan
+         * @description - **API key:** a secret key (`sk_live_` or `sk_test_`), from your server only. A call with an `Origin` header is refused.
+         *     - **Scope needed on the API key:** `subscriptions:write`, or `all-scopes`.
+         *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
+         *
+         *     Sets the subscription's new terms from its next renewal: a plan (`planId`), or a price (`amount` and `frequency`, each defaulting to the current one), never both. The token and chain cannot change: `tokenTicker` and `chainId` are refused. A merchant that needs another token cancels and creates a new subscription. Paystrater does not work out a credit for unused time: you work out any one-off amount yourself.
+         *
+         *     - **A lower amount or a longer interval** (and neither of them dearer) applies at the next renewal on its own. The customer is told.
+         *     - **A higher amount or a shorter interval** is a price rise, even when the other one gets cheaper, and waits for the customer's approval in their app. They have until the first renewal at least `noticeDays` (14 to 90, default 14) after your request. Once they approve, the new price applies at the next renewal that has not been charged yet, even if that is before the deadline. Renewals before they approve are charged the old price. Unapproved at the deadline renewal, it is not charged and the subscription pauses (`pausedBy: system`, `pauseReason: awaiting_price_approval`); approving then charges the new price at once, and after 30 days paused it is cancelled. A customer who declines keeps the old price until the deadline renewal, where the subscription is cancelled without a charge; until then they can still approve. One who declines while it is already paused for the approval cancels it at once.
+         *     - **`chargeNow: true`** is an upgrade: once the customer approves it, within an hour, they are charged `chargeNowAmount` (default: the new `amount`) at once as a normal cycle, then the new amount every period from that moment. That charge is not retried: if it is refused or fails, the subscription falls back to its old terms at once instead of being cancelled. It needs an `active` subscription with no charge in progress.
+         *
+         *     `active`, `past_due` and `paused` subscriptions can be updated; `pending_approval` ones, cancelled or completed ones, and ones set to cancel at period end cannot. One change waits at a time: a new update replaces it, and sending the current terms withdraws it (which also resumes a subscription paused waiting for approval). Sending the same update twice leaves the same state. Each step sends `subscription.updated`; `pendingChange` on the subscription says what is waiting.
+         */
+        post: operations["updateSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subscriptions/{id}/receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a subscription's receipts
+         * @description - **API key:** a secret key (`sk_live_` or `sk_test_`), from your server only. A call with an `Origin` header is refused.
+         *     - **Scope needed on the API key:** `subscriptions:read`, or `all-scopes`.
+         *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
+         *
+         *     Lists the receipts of a subscription's paid periods, newest first (at most 120). Each paid period has exactly one receipt, numbered in sequence across your business (`RCP-000123`), issued in the same step that records the payment.
+         */
+        get: operations["listSubscriptionReceipts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/receipts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieve a receipt
+         * @description - **API key:** a secret key (`sk_live_` or `sk_test_`), from your server only. A call with an `Origin` header is refused.
+         *     - **Scope needed on the API key:** `subscriptions:read`, or `all-scopes`.
+         *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
+         *
+         *     Retrieves one receipt. A receipt never changes after it is issued: it keeps the business details, prices and breakdown it was issued with. The one exception is the logo: `merchant.logoUrl` is the merchant's current logo, by design. Receipts are JSON only, and your frontend renders them.
+         */
+        get: operations["getReceipt"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plans": {
         parameters: {
             query?: never;
@@ -860,7 +950,7 @@ export interface paths {
          *     - **Scope needed on the API key:** `subscriptions:read`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route, and list reads at most 10 a second.
          *
-         *     Lists your plans.
+         *     Lists your plans: active ones first, then archived ones, newest first within each. It returns at most 200 and has no cursor.
          */
         get: operations["listPlans"];
         put?: never;
@@ -894,9 +984,137 @@ export interface paths {
          *     - **Scope needed on the API key:** `subscriptions:write`, or `all-scopes`.
          *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
          *
-         *     Retires a plan so new subscriptions cannot use it. Subscriptions already on it keep going.
+         *     Retires a plan so new subscriptions cannot use it. Subscriptions already on it keep going. An archived plan cannot be made active again; create a new plan instead.
          */
         post: operations["archivePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{id}/migrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a plan's subscribers to another plan
+         * @description - **API key:** a secret key (`sk_live_` or `sk_test_`), from your server only. A call with an `Origin` header is refused.
+         *     - **Scope needed on the API key:** `subscriptions:write`, or `all-scopes`.
+         *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
+         *
+         *     Moves every subscriber on this plan to `toPlanId` at each one's next renewal, by the same rules as `POST /subscriptions/{id}/update`: a lower price applies on its own, a price rise waits for each customer's approval by the first renewal at least `noticeDays` away (14 to 90; left out or 0 means 14). Plans never change, so create the new plan first. Both plans must bill the same token, and if the new plan names a chain the old one must name the same. Subscribers keep the chain they are charged on. The old plan is archived so nobody new joins it, and an archived plan cannot be made active again. Subscribers still waiting to approve, set to cancel at period end, or with a change of their own pending are skipped and listed in the progress. The work runs in the background; each affected subscription sends `subscription.updated`, and `plan.migration_completed` is sent once with the totals. Asking again while it runs returns the same migration.
+         */
+        post: operations["migratePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{id}/migrations/{migrationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieve a plan migration's progress
+         * @description - **API key:** a secret key (`sk_live_` or `sk_test_`), from your server only. A call with an `Origin` header is refused.
+         *     - **Scope needed on the API key:** `subscriptions:read`, or `all-scopes`.
+         *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
+         *
+         *     A migration's counts (queued, pending approval, applied, rejected, skipped) and the subscriptions it skipped (up to 500), so you can follow up with them.
+         */
+        get: operations["getPlanMigration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/test-clocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a test clock
+         * @description - **API key:** a secret key (`sk_live_` or `sk_test_`), from your server only. A call with an `Origin` header is refused.
+         *     - **Scope needed on the API key:** `subscriptions:write`, or `all-scopes`.
+         *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
+         *
+         *     Creates a clock frozen at `frozenTime` (default now). Create subscriptions with its ID as `testClockId`, and their whole lifecycle (trials, reminders, renewals, retries, upgrades, pauses) runs on its time instead of the real one. At most 10 subscriptions per clock and 20 clocks per account; a clock is deleted after 30 days with its subscriptions. Sandbox only (test keys): these routes do not exist in live mode.
+         */
+        post: operations["createTestClock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/test-clocks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieve a test clock
+         * @description - **API key:** a secret key (`sk_live_` or `sk_test_`), from your server only. A call with an `Origin` header is refused.
+         *     - **Scope needed on the API key:** `subscriptions:read`, or `all-scopes`.
+         *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
+         *
+         *     The clock's time and its subscriptions. Sandbox only (test keys): these routes do not exist in live mode.
+         */
+        get: operations["getTestClock"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a test clock
+         * @description - **API key:** a secret key (`sk_live_` or `sk_test_`), from your server only. A call with an `Origin` header is refused.
+         *     - **Scope needed on the API key:** `subscriptions:write`, or `all-scopes`.
+         *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
+         *
+         *     Cancels the clock's subscriptions and deletes it. It takes no `Idempotency-Key`: deleting a clock that is already deleted answers 404. Sandbox only (test keys): these routes do not exist in live mode.
+         */
+        delete: operations["deleteTestClock"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/test-clocks/{id}/advance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Advance a test clock
+         * @description - **API key:** a secret key (`sk_live_` or `sk_test_`), from your server only. A call with an `Origin` header is refused.
+         *     - **Scope needed on the API key:** `subscriptions:write`, or `all-scopes`.
+         *     - **Rate limit:** 300 requests a second per account in production, shared by every route; Paystrater can raise it for your account. In the sandbox (test keys), 25 requests a second per account, shared by every route.
+         *
+         *     Moves the clock forward to `to`, at most two years a call, and runs everything its subscriptions had due up to then, in order, one step at a time: a year of monthly renewals is twelve renewals, each with its webhooks. A charge goes through the normal sandbox payment path and settles on its own; call advance again, with the same `to` or a later one, to carry on past it. A failed charge is retried 1, 6, 24 and 72 hours after the attempt before it, on the clock's time, so its retries run before the renewals that come after them; each retry is a charge too, and needs another advance call. A clock never moves back. Sandbox only (test keys): these routes do not exist in live mode.
+         */
+        post: operations["advanceTestClock"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1046,7 +1264,9 @@ export interface webhooks {
         put?: never;
         /**
          * A payment was received in full.
-         * @description Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
+         * @description A Transfer to Pay deposit found in full at its expiry sends this too, with no `incoming_payment.expired` before it.
+         *
+         *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
          */
         post: operations["incomingPaymentSucceeded"];
         delete?: never;
@@ -1091,7 +1311,9 @@ export interface webhooks {
         put?: never;
         /**
          * A payment expired with nothing received.
-         * @description Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
+         * @description Not sent when a Transfer to Pay deposit holds money at its expiry: a full one is paid out to you (`incoming_payment.succeeded`), and a short one sends `incoming_payment.underpaid`.
+         *
+         *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
          */
         post: operations["incomingPaymentExpired"];
         delete?: never;
@@ -1111,7 +1333,9 @@ export interface webhooks {
         put?: never;
         /**
          * A payment was cancelled.
-         * @description Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
+         * @description Sent when you cancel a payment before anyone paid, or when the customer declines a Pay with Paystrater payment in their Paystrater app. `data.failureReason` says which: `Cancelled by the merchant` or `Declined by the payer`.
+         *
+         *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
          */
         post: operations["incomingPaymentCancelled"];
         delete?: never;
@@ -1131,7 +1355,9 @@ export interface webhooks {
         put?: never;
         /**
          * Less than the amount arrived before expiry.
-         * @description Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
+         * @description Sent when a Transfer to Pay payment expires holding less than its amount. Its `status` is `expired`. The customer confirms where the money goes back.
+         *
+         *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
          */
         post: operations["incomingPaymentUnderpaid"];
         delete?: never;
@@ -1315,7 +1541,9 @@ export interface webhooks {
         put?: never;
         /**
          * A subscription charge succeeded.
-         * @description Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
+         * @description `data.lastRun.receiptId` is the receipt issued for this period, in the same step that recorded the payment. Fetch it with `GET /receipts/{id}`.
+         *
+         *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
          */
         post: operations["subscriptionPaymentSucceeded"];
         delete?: never;
@@ -1335,9 +1563,12 @@ export interface webhooks {
         put?: never;
         /**
          * A subscription charge attempt failed.
-         * @description Sent for each failed attempt at a cycle's charge. While attempts are left it is not final: `data.lastRun.status` is `retrying`, the subscription is `past_due`, and the charge is tried again (1 hour, 6 hours, 24 hours and 72 hours after successive failures, 5 attempts in all). If a later attempt succeeds, `subscription.payment_succeeded` follows.
+         * @description Sent for each failed attempt at a cycle's charge. `data.lastRun.failureReason` says why. What follows depends on the reason:
          *
-         *     When the last attempt fails, `data.lastRun.status` is `failed`, this event is final, and `subscription.cancelled` follows.
+         *     - **Retried** (the customer can fix it, for example not holding enough of the token, or a restricted account): while attempts are left it is not final. `data.lastRun.status` is `retrying`, the subscription is `past_due`, and the charge is tried again 1 hour, 6 hours, 24 hours and 72 hours after successive failures, 5 attempts in all. If a later attempt succeeds, `subscription.payment_succeeded` follows. When the last attempt fails, `data.lastRun.status` is `failed`, this event is final, and `subscription.cancelled` follows.
+         *     - **Not retried, subscription kept** (retrying cannot help until you change something, for example you no longer accept that token or chain): `data.lastRun.status` is `failed` at once, nothing was taken, no `subscription.cancelled` follows, and the subscription stays `active` and charges its next period as usual.
+         *
+         *     A subscription that can no longer be charged at all (the customer revoked permission, or an account no longer exists) is cancelled at once: `subscription.cancelled` is sent, without this event.
          *
          *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
          */
@@ -1359,7 +1590,9 @@ export interface webhooks {
         put?: never;
         /**
          * A subscription was cancelled.
-         * @description Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
+         * @description `data.cancellation` says why and by whom: `reason` and `comment` when the customer (or you) gave them, and `cancelledBy` (`payer`, `merchant` or `system`).
+         *
+         *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
          */
         post: operations["subscriptionCancelled"];
         delete?: never;
@@ -1382,6 +1615,116 @@ export interface webhooks {
          * @description Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
          */
         post: operations["subscriptionTrialEnding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "subscription.updated": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A change to a subscription's terms moved on.
+         * @description Sent when a change you sent with `POST /subscriptions/{id}/update` is requested, approved, declined, applied at a renewal, withdrawn or expires, when a subscription pauses at a price rise's deadline, and when a failed upgrade charge falls back to the old terms. `data.pendingChange` and the subscription's own `amount`, `frequency` and `planId` tell you which: a change waiting has `pendingChange`, one applied has moved into the terms, and one withdrawn, declined (an upgrade) or expired has neither.
+         *
+         *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
+         */
+        post: operations["subscriptionUpdated"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "subscription.renewal_upcoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A subscription renews soon.
+         * @description Sent when the customer is reminded of a renewal: 1 day before for weekly and biweekly subscriptions, 3 days before for monthly, quarterly and biannual ones, and 7 days before for annual ones. Daily subscriptions have no reminder. It is sent once per renewal. `data.balanceSufficient` says whether the customer holds enough of the token on one chain the renewal can be charged on (balances on different chains are never added, because a charge is one transfer on one chain). It is absent when the balances could not be read. The balance itself is never sent. You can use it to nudge the customer to top up through your own channels.
+         *
+         *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
+         */
+        post: operations["subscriptionRenewalUpcoming"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "subscription.paused": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A subscription was paused.
+         * @description Sent when a subscription pauses: by you (`pausedBy: merchant`), by the customer in their app (`pausedBy: payer`), or by Paystrater at a price rise's deadline while it waits for the customer's approval (`pausedBy: system`). `data.resumeAt` is set when the pause ends on its own. Nothing is charged while paused, so you may want to stop the service until `subscription.resumed`.
+         *
+         *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
+         */
+        post: operations["subscriptionPaused"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "subscription.resumed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A paused subscription resumed.
+         * @description Sent when a paused subscription resumes: by whoever paused it, on its `resumeAt` date, or when a customer approves a price rise it was paused for (or you withdraw that change). Renewals missed while it was paused are skipped, not charged. `data.nextChargeAt` is the next charge. `pausedBy` and `resumeAt` are not on this event: who paused it and until when was on its `subscription.paused`.
+         *
+         *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
+         */
+        post: operations["subscriptionResumed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "plan.migration_completed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A plan migration finished queuing its changes.
+         * @description Sent once when `POST /plans/{id}/migrate` has given every subscriber on the old plan its change (or skipped them), with the totals. Each change still applies at that subscriber's own renewal; follow `subscription.updated` for each one, or `GET /plans/{id}/migrations/{migrationId}` for the counts.
+         *
+         *     Sent to each endpoint subscribed to this type or to `*`. Verify `Paystrater-Signature` before trusting the body.
+         */
+        post: operations["planMigrationCompleted"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1493,7 +1836,7 @@ export interface components {
         AcceptedAsset: {
             /**
              * Format: int64
-             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. `GET /payment-settings` lists the chains you accept.
+             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia). `GET /payment-settings` lists the chains you accept.
              * @example 8453
              */
             chainId: number;
@@ -1501,7 +1844,7 @@ export interface components {
              * @description The name of the chain in `chainId`.
              * @example Base
              */
-            chainName?: string;
+            chainName: string;
             /**
              * @description The token tickers you accept on this chain.
              * @example [
@@ -1532,8 +1875,8 @@ export interface components {
          *       "method": "agentic",
          *       "status": "requires_action",
          *       "merchantName": "Bloom Sneakers",
-         *       "merchantLogoUrl": "https://cdn.paystrater.com/logos/bloom-sneakers.png",
-         *       "amount": "25.00",
+         *       "merchantLogoUrl": "https://service.paystrater.com/files/merchant_logos/3f2b8c1e-9d4a-4e7b-8c6f-1a2b3c4d5e6f?v=1793351922123456",
+         *       "amount": "25",
          *       "tokenTicker": "USDC",
          *       "chainId": 8453,
          *       "chainName": "Base",
@@ -1544,7 +1887,7 @@ export interface components {
          *         "orderId": "ORD-10293"
          *       },
          *       "agenticIntent": "eyJyY3YiOiJyY3ZfOGYzazJtOXE0eDd2MWI2bjVjMHoydzRlIn0.9b1c2f4e6a8d0b3e5f7a9c1d3e5f7a9b",
-         *       "agentPrompt": "Pay 25.00 USDC to Bloom Sneakers for order #10293.",
+         *       "agentPrompt": "Pay 25 USDC to Bloom Sneakers for order #10293.",
          *       "expiresAt": "2026-10-30T10:15:00.000Z",
          *       "createdAt": "2026-10-30T09:15:00.000Z",
          *       "livemode": true
@@ -1590,12 +1933,12 @@ export interface components {
             /**
              * Format: uri
              * @description Your logo, as it was when the payment was created.
-             * @example https://cdn.paystrater.com/logos/bloom-sneakers.png
+             * @example https://service.paystrater.com/files/merchant_logos/3f2b8c1e-9d4a-4e7b-8c6f-1a2b3c4d5e6f?v=1793351922123456
              */
             merchantLogoUrl?: string;
             /**
              * @description How much you asked for. A decimal string in the token's own units.
-             * @example 25.00
+             * @example 25
              */
             amount: string;
             /**
@@ -1630,7 +1973,7 @@ export interface components {
             feeBearer: "customer" | "merchant";
             /**
              * @description What you receive after the fee. A decimal string in the token's own units.
-             * @example 25.00
+             * @example 25
              */
             netAmount?: string;
             /**
@@ -1640,7 +1983,7 @@ export interface components {
             transactionId?: string;
             /**
              * @description How much you refunded so far. Missing if you refunded nothing. A decimal string in the token's own units.
-             * @example 5.00
+             * @example 5
              */
             amountRefunded?: string;
             /**
@@ -1663,7 +2006,7 @@ export interface components {
                 [key: string]: string;
             };
             /**
-             * @description Why the payment failed. Only when `status` is `failed`.
+             * @description Why the payment failed, expired or was cancelled. Only when `status` is one of those.
              * @example The customer did not have enough USDC on Base.
              */
             failureReason?: string;
@@ -1674,7 +2017,7 @@ export interface components {
             agenticIntent?: string;
             /**
              * @description The instruction an AI agent reads before it pays.
-             * @example Pay 25.00 USDC to Bloom Sneakers with Paystrater. Payment ID: rcv_8f3k2m9q4x7v1b6n5c0z2w4e. The payment expires at 2026-10-30T10:15:00.000Z.
+             * @example Pay 25 USDC to Bloom Sneakers with Paystrater. Payment ID: rcv_8f3k2m9q4x7v1b6n5c0z2w4e. The payment expires at 2026-10-30T10:15:00.000Z.
              */
             agentPrompt?: string;
             /**
@@ -1707,7 +2050,7 @@ export interface components {
          *       "chainId": 8453,
          *       "chainName": "Base",
          *       "tokenTicker": "USDC",
-         *       "balance": "1250.40",
+         *       "balance": "1250.4",
          *       "address": "0x7a3B9c1D2e4F5a6B7c8D9e0F1a2B3c4D5e6F7a8B",
          *       "pinned": true
          *     }
@@ -1715,7 +2058,7 @@ export interface components {
         Balance: {
             /**
              * Format: int64
-             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. `GET /payment-settings` lists the chains you accept.
+             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia). `GET /payment-settings` lists the chains you accept.
              * @example 8453
              */
             chainId: number;
@@ -1731,7 +2074,7 @@ export interface components {
             tokenTicker: string;
             /**
              * @description How much you hold. A decimal string in the token's own units.
-             * @example 1250.40
+             * @example 1250.4
              */
             balance: string;
             /**
@@ -1753,6 +2096,13 @@ export interface components {
          */
         CancelInput: {
             /**
+             * @description Optional. Why the customer is cancelling; a merchant may pass it on their behalf.
+             * @enum {string}
+             */
+            reason?: "too_expensive" | "missing_features" | "switched_service" | "unused" | "customer_service" | "too_complex" | "low_quality" | "other";
+            /** @description Optional. The customer's own words. Plain text. */
+            comment?: string;
+            /**
              * @description Optional. `true` to stop at the end of the period the customer already paid for. Leave it out to cancel now.
              * @example true
              */
@@ -1768,7 +2118,7 @@ export interface components {
         ChainOption: {
             /**
              * Format: int64
-             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. `GET /payment-settings` lists the chains you accept.
+             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia). `GET /payment-settings` lists the chains you accept.
              * @example 8453
              */
             chainId: number;
@@ -1804,7 +2154,7 @@ export interface components {
             tokenTicker: string;
             /**
              * Format: int64
-             * @description Optional. The chain the customer must pay on. Leave it out to let the customer pick any chain you accept for this token. `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain.
+             * @description Optional. The chain the customer must pay on. Leave it out to let the customer pick any chain you accept for this token. `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia).
              * @example 8453
              */
             chainId?: number;
@@ -1877,7 +2227,7 @@ export interface components {
             tokenTicker: string;
             /**
              * Format: int64
-             * @description Optional. The chain the customer must pay on. Leave it out to let the customer pick any chain you accept for this token. `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain.
+             * @description Optional. The chain the customer must pay on. Leave it out to let the customer pick any chain you accept for this token. `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia).
              * @example 8453
              */
             chainId?: number;
@@ -1990,7 +2340,7 @@ export interface components {
         CreateScheduledPaymentInput: components["schemas"]["Timing"] & {
             /**
              * Format: int64
-             * @description The chain to send on. `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain.
+             * @description The chain to send on. `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia).
              * @example 8453
              */
             chainId: number;
@@ -2034,7 +2384,7 @@ export interface components {
         CreateSendPaymentInput: {
             /**
              * Format: int64
-             * @description The chain to send on. `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain.
+             * @description The chain to send on. `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia).
              * @example 8453
              */
             chainId: number;
@@ -2080,7 +2430,7 @@ export interface components {
              */
             planId?: string;
             /**
-             * @description Optional, and only without `planId`, where it is needed. What each cycle charges. Send it as a decimal string, such as `"25.00"`. A JSON number is also accepted.
+             * @description Optional, and only without `planId`, where it is needed. What each cycle charges. At most 100000000. Send it as a decimal string, such as `"25.00"`. A JSON number is also accepted.
              * @example 9.99
              */
             amount?: string | number;
@@ -2150,6 +2500,15 @@ export interface components {
             metadata?: {
                 [key: string]: string;
             };
+            /** @description Sandbox only. Runs the whole subscription on this test clock's time. Refused in live mode. */
+            testClockId?: string;
+            /**
+             * Format: int64
+             * @description Seats. With a quantity, amount (or a per-unit plan's amount) is the unit price and each period charges unit price x quantity, at most 100000000.
+             */
+            quantity?: number;
+            /** @description With a price only; a plan's breakdown is copied from the plan. What amount is made of, 1 to 5 lines adding up to it exactly (discounts subtract). Printed on receipts; it never changes what is charged, and Paystrater never calculates tax. */
+            breakdown?: components["schemas"]["BreakdownLine"][];
         };
         /**
          * @description Swap one token for another in your wallet, on one chain or across two.
@@ -2330,7 +2689,7 @@ export interface components {
              * @example incoming_payment.succeeded
              * @enum {string}
              */
-            type: "incoming_payment.succeeded" | "incoming_payment.failed" | "incoming_payment.expired" | "incoming_payment.cancelled" | "incoming_payment.underpaid" | "outgoing_payment.succeeded" | "outgoing_payment.failed" | "refund.succeeded" | "refund.failed" | "swap.succeeded" | "swap.failed" | "subscription.created" | "subscription.activated" | "subscription.payment_succeeded" | "subscription.payment_failed" | "subscription.cancelled" | "subscription.trial_ending" | "scheduled_payment.run_succeeded" | "scheduled_payment.run_failed" | "mandate.revoked" | "webhook.test";
+            type: "incoming_payment.succeeded" | "incoming_payment.failed" | "incoming_payment.expired" | "incoming_payment.cancelled" | "incoming_payment.underpaid" | "outgoing_payment.succeeded" | "outgoing_payment.failed" | "refund.succeeded" | "refund.failed" | "swap.succeeded" | "swap.failed" | "subscription.created" | "subscription.activated" | "subscription.payment_succeeded" | "subscription.payment_failed" | "subscription.cancelled" | "subscription.trial_ending" | "subscription.updated" | "subscription.renewal_upcoming" | "subscription.paused" | "subscription.resumed" | "scheduled_payment.run_succeeded" | "scheduled_payment.run_failed" | "mandate.revoked" | "plan.migration_completed" | "webhook.test";
             /**
              * Format: date-time
              * @description When the event was recorded, in the same commit as the change it reports, as ISO 8601 UTC with milliseconds. Retries and redeliveries keep it.
@@ -2350,7 +2709,7 @@ export interface components {
          * @example {
          *       "status": "revoked",
          *       "tokenTicker": "USDC",
-         *       "maxAmount": "50.00",
+         *       "maxAmount": "50",
          *       "payer": {
          *         "accountNumber": 2048193756,
          *         "name": "Ada Okafor"
@@ -2373,7 +2732,7 @@ export interface components {
             tokenTicker: string;
             /**
              * @description The most you could charge per payment. A decimal string in the token's own units.
-             * @example 50.00
+             * @example 50
              */
             maxAmount: string;
             payer: components["schemas"]["PayerSummary"];
@@ -2449,6 +2808,57 @@ export interface components {
          *         }
          *       ],
          *       "feeBearer": "customer",
+         *       "subscriptionFeeBearer": "customer",
+         *       "subscriptionAssets": [
+         *         {
+         *           "chainId": 8453,
+         *           "chainName": "Base",
+         *           "tokens": [
+         *             "USDT",
+         *             "USDC"
+         *           ]
+         *         }
+         *       ],
+         *       "selectableSubscriptionAssets": [
+         *         {
+         *           "chainId": 8453,
+         *           "chainName": "Base",
+         *           "tokens": [
+         *             "USDT",
+         *             "USDC",
+         *             "CNGN"
+         *           ]
+         *         },
+         *         {
+         *           "chainId": 56,
+         *           "chainName": "BNB Smart Chain",
+         *           "tokens": [
+         *             "USDT",
+         *             "USDC",
+         *             "CNGN"
+         *           ]
+         *         },
+         *         {
+         *           "chainId": 5042,
+         *           "chainName": "Arc",
+         *           "tokens": [
+         *             "USDC",
+         *             "EURC"
+         *           ]
+         *         },
+         *         {
+         *           "chainId": 1151111081099710,
+         *           "chainName": "Solana",
+         *           "tokens": [
+         *             "USDT",
+         *             "USDC",
+         *             "CNGN"
+         *           ]
+         *         }
+         *       ],
+         *       "allowPayerPause": true,
+         *       "businessAddress": "12 Admiralty Way, Lekki Phase 1, Lagos",
+         *       "taxId": "TIN 12345678-0001",
          *       "notificationEmail": "payments@bloomsneakers.com",
          *       "warnings": [],
          *       "selectableAssets": [
@@ -2469,7 +2879,7 @@ export interface components {
          *           ]
          *         }
          *       ],
-         *       "logoUrl": "https://cdn.paystrater.com/logos/bloom-sneakers.png",
+         *       "logoUrl": "https://service.paystrater.com/files/merchant_logos/3f2b8c1e-9d4a-4e7b-8c6f-1a2b3c4d5e6f?v=1793351922123456",
          *       "pinnedChains": [
          *         8453
          *       ],
@@ -2505,6 +2915,12 @@ export interface components {
              */
             feeBearer: "customer" | "merchant";
             /**
+             * @description Who pays the fee on subscription charges. Until you set it, it is `feeBearer`. Each subscription keeps the value it had when it was created.
+             * @example customer
+             * @enum {string}
+             */
+            subscriptionFeeBearer: "customer" | "merchant";
+            /**
              * Format: email
              * @description Where we email you about payments.
              * @example payments@bloomsneakers.com
@@ -2515,9 +2931,33 @@ export interface components {
             /** @description Every chain and token you could accept. */
             selectableAssets: components["schemas"]["AcceptedAsset"][];
             /**
+             * @description The chains and tokens your subscriptions and plans bill in, and the
+             *     chains renewals are charged on. Until you narrow them in the dashboard,
+             *     this is all of `selectableSubscriptionAssets`. Your accepted assets
+             *     above do not apply to subscriptions.
+             */
+            subscriptionAssets: components["schemas"]["AcceptedAsset"][];
+            /**
+             * @description Whether your subscribers can pause their subscriptions in their app (each such pause ends on its own within 90 days). On until you turn it off in the dashboard.
+             * @example true
+             */
+            allowPayerPause: boolean;
+            /** @description Printed on your subscription receipts when given. At most 300 characters. Set it in the dashboard. */
+            businessAddress?: string;
+            /** @description Printed on your subscription receipts when given. */
+            taxId?: string;
+            /**
+             * @description Every chain and token a subscription can bill in, each only where the
+             *     chain has the token. In production: USDT, USDC and CNGN on Base and BNB
+             *     Smart Chain, USDC and EURC on Arc, and USDT, USDC and CNGN on Solana. In
+             *     the sandbox: USDT, USDC and CNGN on Base Sepolia and Sepolia, USDC and
+             *     EURC on Arc Testnet, and USDC and CNGN on Solana Devnet.
+             */
+            selectableSubscriptionAssets: components["schemas"]["AcceptedAsset"][];
+            /**
              * Format: uri
              * @description Your logo. Customers see it on checkout and in their app.
-             * @example https://cdn.paystrater.com/logos/bloom-sneakers.png
+             * @example https://service.paystrater.com/files/merchant_logos/3f2b8c1e-9d4a-4e7b-8c6f-1a2b3c4d5e6f?v=1793351922123456
              */
             logoUrl?: string;
             /**
@@ -2567,7 +3007,7 @@ export interface components {
         PinnedToken: {
             /**
              * Format: int64
-             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. `GET /payment-settings` lists the chains you accept.
+             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia). `GET /payment-settings` lists the chains you accept.
              * @example 8453
              */
             chainId: number;
@@ -2587,6 +3027,7 @@ export interface components {
          *       "chainId": 8453,
          *       "frequency": "monthly",
          *       "chargeNow": true,
+         *       "trialDays": 14,
          *       "status": "active",
          *       "createdAt": "2026-10-30T09:15:00.000Z",
          *       "livemode": true
@@ -2608,6 +3049,8 @@ export interface components {
              * @example 9.99
              */
             amount: string;
+            /** @description What amount is made of, if you sent one; tax lines last. */
+            breakdown?: components["schemas"]["BreakdownView"][];
             /**
              * @description The token charged.
              * @example USDC
@@ -2633,6 +3076,8 @@ export interface components {
              * @enum {string}
              */
             frequency: "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "biannually" | "annually";
+            /** @description The amount is a unit price; a subscription on the plan bills it times its quantity. */
+            perUnit?: boolean;
             /**
              * @description Whether the first cycle is charged when billing starts: when the customer approves, or the day a trial ends. The default is `true`. `false` charges first one period after approval, and cannot be used with `trialDays`.
              * @example true
@@ -2683,7 +3128,7 @@ export interface components {
              */
             name: string;
             /**
-             * @description What each cycle charges. Send it as a decimal string, such as `"25.00"`. A JSON number is also accepted.
+             * @description What each cycle charges. At most 100000000. Send it as a decimal string, such as `"25.00"`. A JSON number is also accepted.
              * @example 9.99
              */
             amount: string | number;
@@ -2712,6 +3157,10 @@ export interface components {
              * @enum {string}
              */
             frequency: "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "biannually" | "annually";
+            /** @description The amount is a unit price; a subscription on the plan bills it times its quantity. */
+            perUnit?: boolean;
+            /** @description Copied onto each subscription made from the plan. What amount is made of, 1 to 5 lines adding up to it exactly (discounts subtract). Printed on receipts; it never changes what is charged, and Paystrater never calculates tax. */
+            breakdown?: components["schemas"]["BreakdownLine"][];
             /**
              * @description Optional. Whether the first cycle is charged when billing starts: when the customer approves, or the day a trial ends. The default is `true`. `false` charges first one period after approval, and cannot be used with `trialDays`.
              * @example true
@@ -2724,9 +3173,9 @@ export interface components {
              */
             trialDays?: number;
         };
-        /** @description One page of your plans, newest first. */
+        /** @description Your plans, active ones first, then archived ones; newest first within each. At most 200, with no further pages. */
         PlansPage: {
-            /** @description The plans, newest first. */
+            /** @description The plans, active ones first, newest first within each status. */
             data: components["schemas"]["Plan"][];
         };
         /**
@@ -2762,14 +3211,14 @@ export interface components {
          *       "method": "transfer_to_pay",
          *       "status": "succeeded",
          *       "merchantName": "Bloom Sneakers",
-         *       "merchantLogoUrl": "https://cdn.paystrater.com/logos/bloom-sneakers.png",
-         *       "amount": "25.00",
+         *       "merchantLogoUrl": "https://service.paystrater.com/files/merchant_logos/3f2b8c1e-9d4a-4e7b-8c6f-1a2b3c4d5e6f?v=1793351922123456",
+         *       "amount": "25",
          *       "tokenTicker": "USDC",
          *       "chainId": 8453,
          *       "chainName": "Base",
          *       "fee": "0.12",
          *       "feeBearer": "customer",
-         *       "netAmount": "25.00",
+         *       "netAmount": "25",
          *       "payer": {
          *         "name": "Ada Okafor",
          *         "email": "ada@example.com"
@@ -2788,13 +3237,13 @@ export interface components {
          *       "metadata": {
          *         "orderId": "ORD-10293"
          *       },
-         *       "checkoutUrl": "https://app.paystrater.com/pay/rcv_8f3k2m9q4x7v1b6n5c0z2w4e#key=pk_test_51Hc8xT2eZvKYlo2C",
+         *       "checkoutUrl": "https://app.paystrater.com/pay/rcv_8f3k2m9q4x7v1b6n5c0z2w4e#key=pk_live_51Hc8xT2eZvKYlo2C",
          *       "successUrl": "https://shop.example.com/orders/10293/thanks",
          *       "cancelUrl": "https://shop.example.com/cart",
          *       "expiresAt": "2026-10-30T09:35:00.000Z",
          *       "createdAt": "2026-10-30T09:15:00.000Z",
          *       "completedAt": "2026-10-30T09:18:42.000Z",
-         *       "livemode": false
+         *       "livemode": true
          *     }
          */
         ReceivePayment: {
@@ -2826,8 +3275,8 @@ export interface components {
              *     - `processing`: the customer paid and we are settling it on the chain. Wait for `succeeded`.
              *     - `succeeded`: you were paid. Deliver the order.
              *     - `failed`: the attempt to pay failed. `failureReason` says why.
-             *     - `expired`: nobody paid before `expiresAt`. It can no longer be paid.
-             *     - `cancelled`: you cancelled it before anyone paid.
+             *     - `expired`: it was not paid in full before `expiresAt`. It can no longer be paid.
+             *     - `cancelled`: you cancelled it before anyone paid, or the customer declined it in their Paystrater app.
              *     - `refunded`: you refunded the whole amount. A part refund keeps `succeeded` and sets `amountRefunded`.
              * @example succeeded
              * @enum {string}
@@ -2841,12 +3290,12 @@ export interface components {
             /**
              * Format: uri
              * @description Your logo, as it was when the payment was created.
-             * @example https://cdn.paystrater.com/logos/bloom-sneakers.png
+             * @example https://service.paystrater.com/files/merchant_logos/3f2b8c1e-9d4a-4e7b-8c6f-1a2b3c4d5e6f?v=1793351922123456
              */
             merchantLogoUrl?: string;
             /**
              * @description How much you asked for. A decimal string in the token's own units.
-             * @example 25.00
+             * @example 25
              */
             amount: string;
             /**
@@ -2881,7 +3330,7 @@ export interface components {
             feeBearer: "customer" | "merchant";
             /**
              * @description What you receive after the fee. A decimal string in the token's own units.
-             * @example 25.00
+             * @example 25
              */
             netAmount?: string;
             payer?: components["schemas"]["PayerSummary"];
@@ -2893,7 +3342,7 @@ export interface components {
             transferToPay?: components["schemas"]["TransferToPayDetails"];
             /**
              * @description How much you refunded so far. Missing if you refunded nothing. A decimal string in the token's own units.
-             * @example 5.00
+             * @example 5
              */
             amountRefunded?: string;
             /**
@@ -2916,7 +3365,7 @@ export interface components {
                 [key: string]: string;
             };
             /**
-             * @description Why the payment failed. Only when `status` is `failed`.
+             * @description Why the payment failed, expired or was cancelled. Only when `status` is one of those. On a `cancelled` payment it is `Cancelled by the merchant`, or `Declined by the payer` when the customer declined it.
              * @example The customer did not have enough USDC on Base.
              */
             failureReason?: string;
@@ -2927,7 +3376,7 @@ export interface components {
             agenticIntent?: string;
             /**
              * @description The instruction an AI agent reads before it pays.
-             * @example Pay 25.00 USDC to Bloom Sneakers with Paystrater. Payment ID: rcv_8f3k2m9q4x7v1b6n5c0z2w4e. The payment expires at 2026-10-30T10:15:00.000Z.
+             * @example Pay 25 USDC to Bloom Sneakers with Paystrater. Payment ID: rcv_8f3k2m9q4x7v1b6n5c0z2w4e. The payment expires at 2026-10-30T10:15:00.000Z.
              */
             agentPrompt?: string;
             /**
@@ -2960,8 +3409,8 @@ export interface components {
             methods?: ("pay_with_paystrater" | "transfer_to_pay" | "agentic")[];
             /**
              * Format: uri
-             * @description A Paystrater page where the customer pays. Only when you created the payment with `checkoutPage: true`. Send the customer there. The part after `#` holds your public key (`key`) and never reaches a server. When you gave `checkoutEncryptionKeyId`, it also holds `kid` (the key ID) and `epk` (the encryption public key, 130 hex characters starting `04`), until the key has been rotated for more than a day or is no longer active.
-             * @example https://app.paystrater.com/pay/rcv_8f3k2m9q4x7v1b6n5c0z2w4e#key=pk_test_51Hc8xT2eZvKYlo2C
+             * @description A Paystrater page where the customer pays. Only when you created the payment with `checkoutPage: true`. Send the customer there. It is on `app.paystrater.com` in production and `dev-app.paystrater.com` in the sandbox. The part after `#` holds your public key (`key`) and never reaches a server. When you gave `checkoutEncryptionKeyId`, it also holds `kid` (the key ID) and `epk` (the encryption public key, 130 hex characters starting `04`), until the key has been rotated for more than a day or is no longer active.
+             * @example https://app.paystrater.com/pay/rcv_8f3k2m9q4x7v1b6n5c0z2w4e#key=pk_live_51Hc8xT2eZvKYlo2C
              */
             checkoutUrl?: string;
             /**
@@ -2983,7 +3432,7 @@ export interface components {
             cancelUrl?: string;
             /**
              * Format: date-time
-             * @description When the payment can no longer be paid, in ISO 8601 UTC. After it, `status` becomes `expired`.
+             * @description When the payment can no longer be paid, in ISO 8601 UTC. After it, `status` becomes `expired`, unless a full Transfer to Pay deposit is found in the last check and paid out to you.
              * @example 2026-10-30T09:35:00.000Z
              */
             expiresAt: string;
@@ -2995,7 +3444,7 @@ export interface components {
             createdAt: string;
             /**
              * Format: date-time
-             * @description When the payment reached its final status, in ISO 8601 UTC.
+             * @description When the payment was paid, expired or was cancelled, in ISO 8601 UTC. Missing while it is open, and on a `failed` payment.
              * @example 2026-10-30T09:18:42.000Z
              */
             completedAt?: string;
@@ -3049,7 +3498,7 @@ export interface components {
          * @example {
          *       "accountNumber": 3091827465,
          *       "name": "Tunde Bello",
-         *       "amount": "150.00"
+         *       "amount": "150"
          *     }
          */
         ReceiverView: {
@@ -3071,7 +3520,7 @@ export interface components {
             address?: string;
             /**
              * @description How much they get each cycle. A decimal string in the token's own units.
-             * @example 150.00
+             * @example 150
              */
             amount: string;
         };
@@ -3082,7 +3531,7 @@ export interface components {
          *       "transactionType": "refund",
          *       "receivePaymentId": "rcv_8f3k2m9q4x7v1b6n5c0z2w4e",
          *       "status": "succeeded",
-         *       "amount": "5.00",
+         *       "amount": "5",
          *       "tokenTicker": "USDC",
          *       "chainId": 8453,
          *       "transactionId": "3b8c1d6e9f2a5b0c4d7e1f3a",
@@ -3121,7 +3570,7 @@ export interface components {
             status: "pending" | "succeeded" | "failed";
             /**
              * @description How much is refunded. A decimal string in the token's own units.
-             * @example 5.00
+             * @example 5
              */
             amount: string;
             /**
@@ -3230,7 +3679,7 @@ export interface components {
         Run: {
             /**
              * Format: int64
-             * @description Which cycle this is, counting from 0 for a first charge made at once, or from 1.
+             * @description Which cycle this is, counting from 0, or from 1 for a subscription created with `chargeNow` set to `false`.
              * @example 3
              */
             cycle: number;
@@ -3272,13 +3721,18 @@ export interface components {
              */
             receivePaymentId?: string;
             /**
+             * @description On `subscription.payment_succeeded`, the receipt of the period just paid.
+             * @example rcp_4t7u0v3w6x9y2z5a8b1c4d7e
+             */
+            receiptId?: string;
+            /**
              * @description Why the last attempt failed.
              * @example Not enough USDC in the wallet on Base.
              */
             failureReason?: string;
         };
         /**
-         * @description The latest cycles of a schedule, newest first.
+         * @description The latest cycles of a schedule, newest first, at most 50.
          * @example {
          *       "data": [
          *         {
@@ -3306,17 +3760,17 @@ export interface components {
          *       "chainId": 8453,
          *       "chainName": "Base",
          *       "tokenTicker": "USDC",
-         *       "totalAmount": "450.00",
+         *       "totalAmount": "450",
          *       "receivers": [
          *         {
          *           "accountNumber": 3091827465,
          *           "name": "Tunde Bello",
-         *           "amount": "150.00"
+         *           "amount": "150"
          *         },
          *         {
          *           "accountNumber": 2048193756,
          *           "name": "Ada Okafor",
-         *           "amount": "300.00"
+         *           "amount": "300"
          *         }
          *       ],
          *       "frequency": "monthly",
@@ -3324,10 +3778,10 @@ export interface components {
          *       "nextRunAt": "2026-11-01T09:00:00.000Z",
          *       "maxCycles": 12,
          *       "cyclesCompleted": 3,
-         *       "narration": "October salary",
-         *       "reference": "PAYROLL-OCT",
+         *       "narration": "Monthly salary",
+         *       "reference": "PAYROLL-2026",
          *       "lastRun": {
-         *         "cycle": 3,
+         *         "cycle": 2,
          *         "status": "succeeded",
          *         "attempt": 1,
          *         "dueAt": "2026-10-01T09:00:00.000Z",
@@ -3335,7 +3789,7 @@ export interface components {
          *           "7m2n9p4q1r8s5t0u3v6w9x2y"
          *         ]
          *       },
-         *       "createdAt": "2026-10-30T09:15:00.000Z",
+         *       "createdAt": "2026-07-28T09:15:00.000Z",
          *       "livemode": true
          *     }
          */
@@ -3365,7 +3819,7 @@ export interface components {
             status: "active" | "past_due" | "paused" | "cancelled" | "completed";
             /**
              * Format: int64
-             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. `GET /payment-settings` lists the chains you accept.
+             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia). `GET /payment-settings` lists the chains you accept.
              * @example 8453
              */
             chainId: number;
@@ -3381,7 +3835,7 @@ export interface components {
             tokenTicker: string;
             /**
              * @description What each cycle sends to all receivers together, before fees. A decimal string in the token's own units.
-             * @example 450.00
+             * @example 450
              */
             totalAmount: string;
             /** @description Who each cycle pays. */
@@ -3445,6 +3899,7 @@ export interface components {
              * @example lst_1a4b7c0d3e6f9g2h5j8k1l4m
              */
             listId?: string;
+            /** @description The latest cycle that ran. Sent by `GET /scheduled-payments/{id}` and on the run events. Lists and the responses to create, pause, resume and cancel leave it out. */
             lastRun?: components["schemas"]["Run"];
             /**
              * Format: date-time
@@ -3473,7 +3928,7 @@ export interface components {
          * @example {
          *       "accountNumber": 3091827465,
          *       "name": "Tunde Bello",
-         *       "amount": "150.00",
+         *       "amount": "150",
          *       "transactionId": "7m2n9p4q1r8s5t0u3v6w9x2y",
          *       "status": "succeeded"
          *     }
@@ -3497,7 +3952,7 @@ export interface components {
             address?: string;
             /**
              * @description How much they get. A decimal string in the token's own units.
-             * @example 150.00
+             * @example 150
              */
             amount: string;
             /**
@@ -3525,20 +3980,20 @@ export interface components {
          *       "chainId": 8453,
          *       "chainName": "Base",
          *       "tokenTicker": "USDC",
-         *       "totalAmount": "450.00",
+         *       "totalAmount": "450",
          *       "fee": "0.35",
          *       "receivers": [
          *         {
          *           "accountNumber": 3091827465,
          *           "name": "Tunde Bello",
-         *           "amount": "150.00",
+         *           "amount": "150",
          *           "transactionId": "7m2n9p4q1r8s5t0u3v6w9x2y",
          *           "status": "succeeded"
          *         },
          *         {
          *           "accountNumber": 2048193756,
          *           "name": "Ada Okafor",
-         *           "amount": "300.00",
+         *           "amount": "300",
          *           "transactionId": "7m2n9p4q1r8s5t0u3v6w9x2y",
          *           "status": "succeeded"
          *         }
@@ -3574,7 +4029,7 @@ export interface components {
             status: "processing" | "succeeded" | "failed";
             /**
              * Format: int64
-             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. `GET /payment-settings` lists the chains you accept.
+             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia). `GET /payment-settings` lists the chains you accept.
              * @example 8453
              */
             chainId: number;
@@ -3590,7 +4045,7 @@ export interface components {
             tokenTicker: string;
             /**
              * @description What all receivers get together, before the fee. A decimal string in the token's own units.
-             * @example 450.00
+             * @example 450
              */
             totalAmount: string;
             /**
@@ -3633,7 +4088,7 @@ export interface components {
          * @example {
          *       "chainId": 8453,
          *       "tokenTicker": "USDC",
-         *       "totalAmount": "450.00",
+         *       "totalAmount": "450",
          *       "fee": "0.35",
          *       "total": "450.35"
          *     }
@@ -3641,7 +4096,7 @@ export interface components {
         SendPaymentQuote: {
             /**
              * Format: int64
-             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. `GET /payment-settings` lists the chains you accept.
+             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia). `GET /payment-settings` lists the chains you accept.
              * @example 8453
              */
             chainId: number;
@@ -3652,7 +4107,7 @@ export interface components {
             tokenTicker: string;
             /**
              * @description What all receivers get together. A decimal string in the token's own units.
-             * @example 450.00
+             * @example 450
              */
             totalAmount: string;
             /**
@@ -4164,10 +4619,14 @@ export interface components {
          *       "tokenTicker": "USDC",
          *       "chainId": 8453,
          *       "frequency": "monthly",
-         *       "currentCycle": 4,
-         *       "nextChargeAt": "2026-11-30T09:15:00.000Z",
+         *       "currentCycle": 1,
+         *       "nextChargeAt": "2026-12-13T09:15:00.000Z",
          *       "chargeNow": true,
+         *       "trialDays": 14,
+         *       "trialEndsAt": "2026-11-13T09:15:00.000Z",
+         *       "feeBearer": "customer",
          *       "cancelAtPeriodEnd": false,
+         *       "pendingChange": null,
          *       "description": "Pro plan, monthly",
          *       "reference": "CUST-5521",
          *       "metadata": {
@@ -4195,8 +4654,8 @@ export interface components {
              *     - `pending_approval`: waiting for the customer to approve it in their Paystrater app.
              *     - `active`: the customer approved it, and it charges on time.
              *     - `past_due`: the last charge failed and we are retrying it.
-             *     - `paused`: you paused it. Nothing is charged until you resume it.
-             *     - `cancelled`: it was cancelled, by you, the customer, or after every retry of a charge failed.
+             *     - `paused`: you, the customer or Paystrater paused it. `pausedBy` says who. Nothing is charged until it resumes.
+             *     - `cancelled`: it was cancelled: by you, by the customer (including revoking permission), after every retry of a charge failed, after a price rise was declined or not approved, or because an account no longer exists.
              *     - `completed`: it reached `maxCycles`.
              * @example active
              * @enum {string}
@@ -4214,6 +4673,15 @@ export interface components {
              * @example 9.99
              */
             amount: string;
+            /**
+             * Format: int64
+             * @description Seats, when it bills per unit; amount is then unitAmount x quantity.
+             */
+            quantity?: number;
+            /** @description The price of one seat, when it bills per unit. */
+            unitAmount?: string;
+            /** @description What amount is made of, if you sent one; tax lines last. */
+            breakdown?: components["schemas"]["BreakdownView"][];
             /**
              * @description The token charged.
              * @example USDC
@@ -4246,9 +4714,21 @@ export interface components {
              */
             currentCycle: number;
             /**
+             * Format: int64
+             * @description How many periods it bills in all. Absent when it bills until cancelled.
+             */
+            maxCycles?: number;
+            /**
+             * Format: int64
+             * @description How many periods are left to bill, the next one included. A failed upgrade charge does not use one up. Absent when there is no limit or it has ended.
+             */
+            cyclesRemaining?: number;
+            /**
              * Format: date-time
-             * @description When the next charge happens, in ISO 8601 UTC.
-             * @example 2026-11-30T09:15:00.000Z
+             * @description When the next charge happens, in ISO 8601 UTC. Missing while nothing is due to be charged: waiting for approval, paused, cancelled or completed.
+             *
+             *     While `past_due`, it is the next retry. While a charge is in flight, it is the time that charge was due. With `cancelAtPeriodEnd`, it is when the subscription ends instead of being charged.
+             * @example 2026-12-13T09:15:00.000Z
              */
             nextChargeAt?: string;
             /**
@@ -4263,6 +4743,13 @@ export interface components {
              */
             trialDays?: number;
             /**
+             * @description Who pays the fee on this subscription's charges, fixed when it was
+             *     created from the merchant's subscription fee setting. When it is
+             *     absent, charges follow the merchant's current subscription fee setting.
+             * @enum {string}
+             */
+            feeBearer?: "customer" | "merchant";
+            /**
              * Format: date-time
              * @description The date of the first charge after a trial. Set once the customer approves.
              * @example 2026-11-13T09:15:00.000Z
@@ -4273,6 +4760,45 @@ export interface components {
              * @example false
              */
             cancelAtPeriodEnd: boolean;
+            /** @description The sandbox test clock it runs on. */
+            testClockId?: string;
+            /**
+             * @description Text to hand to the payer's AI agent so it can approve the subscription. Present only while the
+             *     subscription is `pending_approval` and the payer is an agent wallet: a Paystrater account an AI
+             *     agent created by email, which has no app and no PIN. It names the subscription ID and its terms
+             *     (merchant, amount, token, chain when fixed, interval, trial and when the first charge is) and tells
+             *     the agent to call `get_subscription`, then `approve_subscription`, with that ID. Show it with a copy
+             *     button and pass it to the customer's agent. The agent approves within its own limits, or asks its
+             *     owner for an emailed code; the subscription then renews like any other.
+             * @example Approve my Paystrater subscription with the Paystrater tools. Subscription ID: sub_9f2c41d07a. Terms: 15 USDC monthly to "Bloom Sneakers" (Paystrater ID 5012345678). The first charge is made at approval. Call get_subscription with this subscription ID and check it shows these terms, then call approve_subscription with the same subscription ID and the amount, tokenTicker and frequency get_subscription shows. If the terms differ, do not approve; tell me.
+             */
+            agentPrompt?: string;
+            /**
+             * @description `agent` when the payer's own AI agent approved the subscription (an agent wallet). Absent when the payer approved it in the Paystrater app.
+             * @enum {string}
+             */
+            approvedBy?: "agent";
+            /** @description Why it was (or will be, at period end) cancelled, and by whom. system is a cancellation nobody asked for (failed retries, a revoked permission, an unapproved price rise). */
+            cancellation?: {
+                reason?: string;
+                comment?: string;
+                /** @enum {string} */
+                cancelledBy: "payer" | "merchant" | "system";
+            };
+            /** @description The change you sent with `POST /subscriptions/{id}/update` that is waiting for the next renewal or for the customer, or `null`. */
+            pendingChange: components["schemas"]["PendingChange"] | null;
+            /**
+             * @description Who paused it, while it is `paused`. Whoever paused it resumes it. `system` means a price rise reached its deadline unapproved and waits for the customer.
+             * @enum {string}
+             */
+            pausedBy?: "merchant" | "payer" | "system";
+            /** @description Why Paystrater paused it, when `pausedBy` is `system`. `awaiting_price_approval` is the only reason today. */
+            pauseReason?: string;
+            /**
+             * Format: date-time
+             * @description When a pause with a date ends on its own, while it is `paused`.
+             */
+            resumeAt?: string;
             /**
              * @description What the subscription is for. The customer sees it.
              * @example Pro plan, monthly
@@ -4292,6 +4818,7 @@ export interface components {
             metadata?: {
                 [key: string]: string;
             };
+            /** @description The latest charge. Sent by `GET /subscriptions/{id}` and on the `subscription.payment_succeeded` and `subscription.payment_failed` events, on `subscription.activated` when the first charge was made at approval, and on the `subscription.updated` sent when an upgrade's charge failed. Lists, test clocks and the responses to create, update, pause, resume and cancel leave it out. */
             lastRun?: components["schemas"]["Run"];
             /**
              * Format: date-time
@@ -4315,6 +4842,474 @@ export interface components {
              */
             nextCursor?: string;
         };
+        /**
+         * @description UpdateSubscriptionInput sets a subscription's terms from its next renewal.
+         * @example {
+         *       "amount": "25.00",
+         *       "frequency": "monthly"
+         *     }
+         */
+        UpdateSubscriptionInput: {
+            /** @description An active plan of yours in the subscription's token (and chain, if the plan names one). Its chargeNow and trialDays are ignored on an update. Not with amount or frequency. */
+            planId?: string;
+            /**
+             * @description The new amount per period, positive, at most 100000000 and with no more decimals than the token has. Defaults to the current amount. Send it as a decimal string, such as `"25.00"`. A JSON number is also accepted.
+             * @example 25.00
+             */
+            amount?: string | number;
+            /**
+             * @description The new interval. Defaults to the current one.
+             * @enum {string}
+             */
+            frequency?: "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "biannually" | "annually";
+            /** @description Charge as soon as the customer approves (within an hour) and bill the new terms from then. Always needs the customer's approval. */
+            chargeNow?: boolean;
+            /**
+             * @description Only with chargeNow. The one-off amount charged at approval, which you work out, for example the new price less a credit for unused time. Defaults to the new amount. At most 100000000. Send it as a decimal string, such as `"25.00"`. A JSON number is also accepted.
+             * @example 84.00
+             */
+            chargeNowAmount?: string | number;
+            /**
+             * Format: int64
+             * @description A price rise's notice, default 14. The customer has until the first renewal at least this many days away to approve it. Not with chargeNow.
+             */
+            noticeDays?: number;
+            /**
+             * Format: int64
+             * @description The new number of seats. With seats, amount is the unit price and the total is what is charged and approved. A change of seats alone keeps the plan; another unit price or frequency leaves it. Adding seats with chargeNow charges chargeNowAmount at once; removing seats is a decrease that applies at the next renewal, with no refund for the current period. A quantity change without a new breakdown clears the stored one.
+             */
+            quantity?: number;
+            /** @description With a price only. It replaces the stored breakdown when the change applies; an amount change without one clears it. What amount is made of, 1 to 5 lines adding up to it exactly (discounts subtract). Printed on receipts; it never changes what is charged, and Paystrater never calculates tax. */
+            breakdown?: components["schemas"]["BreakdownLine"][];
+            /** @description Only with chargeNow. What the one-off charge is made of, adding up exactly to chargeNowAmount (or to amount without one). */
+            chargeNowBreakdown?: components["schemas"]["BreakdownLine"][];
+            /** @description Refused with a 400. A subscription's token cannot change. */
+            tokenTicker?: string;
+            /**
+             * Format: int64
+             * @description Refused with a 400. A subscription's chain cannot change.
+             */
+            chainId?: number;
+        };
+        /**
+         * @description BreakdownLine is one line of what an amount is made of. 1 to 5 lines, which
+         *     must add up exactly to the amount they describe (discounts subtracting).
+         *     It is printed on receipts, never calculated, and never changes what is
+         *     charged.
+         */
+        BreakdownLine: {
+            /**
+             * @description Plain text on one line, trimmed.
+             * @example VAT 7.5%
+             */
+            label: string;
+            /**
+             * @description Positive, with no more decimals than the token has. A discount is written positive and subtracts. Send it as a decimal string, such as `"25.00"`. A JSON number is also accepted.
+             * @example 1.75
+             */
+            amount: string | number;
+            /**
+             * @description Default item.
+             * @enum {string}
+             */
+            type?: "item" | "tax" | "fee" | "discount";
+        };
+        /** @description BreakdownView is a breakdown line as shown, tax lines last. */
+        BreakdownView: {
+            label: string;
+            amount: string;
+            /** @enum {string} */
+            type: "item" | "tax" | "fee" | "discount";
+        };
+        /**
+         * @description Receipt is one paid subscription cycle's receipt. It never changes after it is issued, except that its logo is the merchant's current one. Receipts are JSON only, and your frontend renders them.
+         * @example {
+         *       "id": "rcp_4t7u0v3w6x9y2z5a8b1c4d7e",
+         *       "number": "RCP-000123",
+         *       "kind": "renewal",
+         *       "subscriptionId": "sub_4t7u0v3w6x9y2z5a8b1c4d7e",
+         *       "cycle": 0,
+         *       "merchant": {
+         *         "name": "Bloom Sneakers",
+         *         "accountNumber": 1122334455,
+         *         "address": "12 Admiralty Way, Lekki Phase 1, Lagos",
+         *         "taxId": "TIN 12345678-0001",
+         *         "logoUrl": "https://service.paystrater.com/files/merchant_logos/3f2b8c1e-9d4a-4e7b-8c6f-1a2b3c4d5e6f?v=1793351922123456"
+         *       },
+         *       "payer": {
+         *         "name": "Ada Okafor",
+         *         "accountNumber": 2048193756
+         *       },
+         *       "planId": "plan_6g9h2j5k8l1m4n7p0q3r6s9t",
+         *       "planName": "Pro monthly",
+         *       "description": "Pro plan, monthly",
+         *       "amount": "9.99",
+         *       "tokenTicker": "USDC",
+         *       "chainId": 8453,
+         *       "chainName": "Base",
+         *       "frequency": "monthly",
+         *       "fee": "0.02",
+         *       "feeBearer": "customer",
+         *       "netAmount": "9.99",
+         *       "transactionId": "7m2n9p4q1r8s5t0u3v6w9x2y",
+         *       "receivePaymentId": "rcv_8f3k2m9q4x7v1b6n5c0z2w4e",
+         *       "periodStart": "2026-11-13T09:15:00.000Z",
+         *       "periodEnd": "2026-12-13T09:15:00.000Z",
+         *       "issuedAt": "2026-11-13T09:15:42.000Z",
+         *       "livemode": true
+         *     }
+         */
+        Receipt: {
+            /** @example rcp_4t7u0v3w6x9y2z5a8b1c4d7e */
+            id: string;
+            /**
+             * @description Sequential per merchant, with no gaps or repeats. It is assigned just after the receipt is issued, so right after a payment succeeds it can briefly be an empty string; read the receipt again to get it.
+             * @example RCP-000123
+             */
+            number: string;
+            /**
+             * @description upgrade is a chargeNow update's one-off charge.
+             * @enum {string}
+             */
+            kind: "renewal" | "upgrade";
+            subscriptionId: string;
+            /** Format: int64 */
+            cycle: number;
+            merchant: components["schemas"]["ReceiptParty"];
+            payer: components["schemas"]["ReceiptParty"];
+            planId?: string;
+            planName?: string;
+            description?: string;
+            amount: string;
+            tokenTicker: string;
+            /** Format: int64 */
+            chainId: number;
+            chainName: string;
+            /** @enum {string} */
+            frequency: "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "biannually" | "annually";
+            fee?: string;
+            /** @enum {string} */
+            feeBearer?: "customer" | "merchant";
+            netAmount?: string;
+            transactionId?: string;
+            receivePaymentId: string;
+            /** Format: date-time */
+            periodStart: string;
+            /** Format: date-time */
+            periodEnd: string;
+            breakdown?: components["schemas"]["BreakdownView"][];
+            /** Format: int64 */
+            quantity?: number;
+            unitAmount?: string;
+            /** Format: date-time */
+            issuedAt: string;
+            livemode: boolean;
+        };
+        /** @description ReceiptParty is one side of a receipt, as it was when the receipt was issued, except that logoUrl shows the merchant's current logo. */
+        ReceiptParty: {
+            name?: string;
+            /** Format: int64 */
+            accountNumber?: number;
+            address?: string;
+            taxId?: string;
+            /**
+             * Format: uri
+             * @description The URL of the merchant's logo, a public image your frontend can load. Only on the merchant, and absent when the business had no uploaded logo when the receipt was issued. This is the merchant's current logo, by design, not a copy kept with the receipt. After the business uploads a new one, every receipt that has a logo shows the new one, old receipts included.
+             */
+            logoUrl?: string;
+        };
+        /**
+         * @description ReceiptsPage is a subscription's receipts, newest first.
+         * @example {
+         *       "data": [
+         *         {
+         *           "id": "rcp_4t7u0v3w6x9y2z5a8b1c4d7e",
+         *           "number": "RCP-000123",
+         *           "kind": "renewal",
+         *           "subscriptionId": "sub_4t7u0v3w6x9y2z5a8b1c4d7e",
+         *           "cycle": 0,
+         *           "merchant": {
+         *             "name": "Bloom Sneakers",
+         *             "accountNumber": 1122334455,
+         *             "address": "12 Admiralty Way, Lekki Phase 1, Lagos",
+         *             "taxId": "TIN 12345678-0001",
+         *             "logoUrl": "https://service.paystrater.com/files/merchant_logos/3f2b8c1e-9d4a-4e7b-8c6f-1a2b3c4d5e6f?v=1793351922123456"
+         *           },
+         *           "payer": {
+         *             "name": "Ada Okafor",
+         *             "accountNumber": 2048193756
+         *           },
+         *           "planId": "plan_6g9h2j5k8l1m4n7p0q3r6s9t",
+         *           "planName": "Pro monthly",
+         *           "description": "Pro plan, monthly",
+         *           "amount": "9.99",
+         *           "tokenTicker": "USDC",
+         *           "chainId": 8453,
+         *           "chainName": "Base",
+         *           "frequency": "monthly",
+         *           "fee": "0.02",
+         *           "feeBearer": "customer",
+         *           "netAmount": "9.99",
+         *           "transactionId": "7m2n9p4q1r8s5t0u3v6w9x2y",
+         *           "receivePaymentId": "rcv_8f3k2m9q4x7v1b6n5c0z2w4e",
+         *           "periodStart": "2026-11-13T09:15:00.000Z",
+         *           "periodEnd": "2026-12-13T09:15:00.000Z",
+         *           "issuedAt": "2026-11-13T09:15:42.000Z",
+         *           "livemode": true
+         *         }
+         *       ]
+         *     }
+         */
+        ReceiptsPage: {
+            data: components["schemas"]["Receipt"][];
+        };
+        /**
+         * @description MigratePlanInput moves a plan's subscribers to another plan.
+         * @example {
+         *       "toPlanId": "plan_9k2m4n6p8q1r3s5t7v9w2x4y",
+         *       "noticeDays": 30
+         *     }
+         */
+        MigratePlanInput: {
+            toPlanId: string;
+            /**
+             * Format: int64
+             * @description Optional. A price rise's notice in days: 0, or 14 to 90. 0 suits a decrease; for a price rise it means the default, 14.
+             */
+            noticeDays?: number & (0 | unknown);
+        };
+        /**
+         * @description PlanMigration is a plan-wide change and its progress.
+         * @example {
+         *       "id": "mig_4t7u0v3w6x9y2z5a8b1c4d7e",
+         *       "fromPlanId": "plan_6g9h2j5k8l1m4n7p0q3r6s9t",
+         *       "toPlanId": "plan_9k2m4n6p8q1r3s5t7v9w2x4y",
+         *       "noticeDays": 30,
+         *       "status": "completed",
+         *       "counts": {
+         *         "queued": 0,
+         *         "pendingApproval": 38,
+         *         "applied": 0,
+         *         "rejected": 1,
+         *         "skipped": 1
+         *       },
+         *       "skipped": [
+         *         {
+         *           "subscriptionId": "sub_7h0j3k6l9m2n5p8q1r4s7t0u",
+         *           "reason": "Set to cancel at the end of its period"
+         *         }
+         *       ],
+         *       "createdAt": "2026-10-30T09:15:00.000Z",
+         *       "completedAt": "2026-10-30T09:15:20.000Z",
+         *       "livemode": true
+         *     }
+         */
+        PlanMigration: {
+            /** @example mig_4t7u0v3w6x9y2z5a8b1c4d7e */
+            id: string;
+            fromPlanId: string;
+            toPlanId: string;
+            /** Format: int64 */
+            noticeDays?: number;
+            /** @enum {string} */
+            status: "running" | "completed";
+            counts: {
+                /**
+                 * Format: int64
+                 * @description Changes that apply at the next renewal on their own.
+                 */
+                queued: number;
+                /** Format: int64 */
+                pendingApproval: number;
+                /** Format: int64 */
+                applied: number;
+                /** Format: int64 */
+                rejected: number;
+                /** Format: int64 */
+                skipped: number;
+            };
+            skipped: {
+                subscriptionId: string;
+                reason: string;
+            }[];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            completedAt?: string;
+            livemode: boolean;
+        };
+        /**
+         * @description AdvanceTestClockInput moves a test clock forward.
+         * @example {
+         *       "to": "2027-06-01T00:00:00Z"
+         *     }
+         */
+        AdvanceTestClockInput: {
+            /**
+             * Format: date-time
+             * @description The clock's time or later, at most two years later.
+             */
+            to: string;
+        };
+        /**
+         * @description CreateTestClockInput makes a sandbox test clock.
+         * @example {
+         *       "frozenTime": "2027-01-01T00:00:00Z"
+         *     }
+         */
+        CreateTestClockInput: {
+            /**
+             * Format: date-time
+             * @description Where the clock starts, within a year before now and two years after. Default now.
+             */
+            frozenTime?: string;
+            name?: string;
+        };
+        /**
+         * @description TestClock is a sandbox clock and the subscriptions that run on it.
+         * @example {
+         *       "id": "clk_4t7u0v3w6x9y2z5a8b1c4d7e",
+         *       "name": "Annual plan test",
+         *       "frozenTime": "2027-01-01T00:00:00.000Z",
+         *       "createdAt": "2026-11-20T10:00:00.000Z",
+         *       "subscriptions": [
+         *         {
+         *           "id": "sub_4t7u0v3w6x9y2z5a8b1c4d7e",
+         *           "transactionType": "subscription",
+         *           "status": "active",
+         *           "payer": {
+         *             "accountNumber": 2048193756,
+         *             "name": "Ada Okafor"
+         *           },
+         *           "merchant": {
+         *             "accountNumber": 1122334455,
+         *             "name": "Bloom Sneakers"
+         *           },
+         *           "amount": "9.99",
+         *           "tokenTicker": "USDC",
+         *           "chainId": 84532,
+         *           "frequency": "monthly",
+         *           "currentCycle": 1,
+         *           "nextChargeAt": "2027-02-01T00:00:00.000Z",
+         *           "chargeNow": true,
+         *           "feeBearer": "customer",
+         *           "cancelAtPeriodEnd": false,
+         *           "testClockId": "clk_4t7u0v3w6x9y2z5a8b1c4d7e",
+         *           "pendingChange": null,
+         *           "description": "Pro plan, monthly",
+         *           "reference": "CUST-5521",
+         *           "metadata": {
+         *             "customerId": "CUST-5521"
+         *           },
+         *           "createdAt": "2026-11-20T10:05:00.000Z",
+         *           "livemode": false
+         *         }
+         *       ]
+         *     }
+         */
+        TestClock: {
+            /** @example clk_4t7u0v3w6x9y2z5a8b1c4d7e */
+            id: string;
+            name?: string;
+            /** Format: date-time */
+            frozenTime: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description The subscriptions on the clock, without `lastRun`. Read `GET /subscriptions/{id}` to see whether a charge is in flight. */
+            subscriptions: components["schemas"]["Subscription"][];
+            /** @description `true` in the response that deleted the clock. Missing otherwise. */
+            deleted?: boolean;
+        };
+        /**
+         * @description PendingChange is a subscription's update waiting for its next renewal, or for the customer.
+         * @example {
+         *       "amount": "25",
+         *       "frequency": "monthly",
+         *       "requiresApproval": true,
+         *       "approved": false,
+         *       "rejected": false,
+         *       "chargeNow": false,
+         *       "effectiveAt": "2026-12-13T09:15:00.000Z",
+         *       "approvalDeadline": "2026-12-13T09:15:00.000Z",
+         *       "requestedAt": "2026-11-20T10:00:00.000Z"
+         *     }
+         */
+        PendingChange: {
+            /** @example 25 */
+            amount: string;
+            /**
+             * Format: int64
+             * @description Seats, when it bills per unit; amount is then unitAmount x quantity.
+             */
+            quantity?: number;
+            /** @description The price of one seat, when it bills per unit. */
+            unitAmount?: string;
+            /**
+             * @example monthly
+             * @enum {string}
+             */
+            frequency: "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "biannually" | "annually";
+            planId?: string;
+            /** @description True when the change costs the customer more (a higher amount or a shorter interval, even when the other one gets cheaper), or charges now. */
+            requiresApproval: boolean;
+            approved: boolean;
+            /**
+             * @description `agent` when the payer's own AI agent approved the change (an agent wallet).
+             * @enum {string}
+             */
+            approvedBy?: "agent";
+            /** @description The customer declined a price rise. The subscription is cancelled at approvalDeadline unless they approve before then. Declining while it is already paused for the approval cancels it at once. */
+            rejected: boolean;
+            chargeNow: boolean;
+            chargeNowAmount?: string;
+            /**
+             * Format: date-time
+             * @description The next renewal, when the change applies if it needs no approval or is approved by then. It can be before `approvalDeadline`; a price rise not approved by then moves to the renewal after. Absent for chargeNow, which applies at approval.
+             */
+            effectiveAt?: string;
+            /**
+             * Format: date-time
+             * @description The renewal by which the customer must approve a price rise, the first at least `noticeDays` after the request. Approved earlier, it applies at the next renewal, without waiting for this one. Unapproved at this one, the subscription pauses.
+             */
+            approvalDeadline?: string;
+            /**
+             * Format: date-time
+             * @description When an unapproved chargeNow upgrade expires, an hour after it was sent.
+             */
+            expiresAt?: string;
+            /** Format: date-time */
+            requestedAt: string;
+            /** @description What the new amount is made of, if you sent one; tax lines last. */
+            breakdown?: components["schemas"]["BreakdownView"][];
+            chargeNowBreakdown?: components["schemas"]["BreakdownView"][];
+        };
+        /**
+         * @description Pause until you resume, or until a date.
+         * @example {
+         *       "resumeAt": "2027-02-01"
+         *     }
+         */
+        PauseInput: {
+            /**
+             * @description Optional. When the pause ends on its own: a date such as `2027-02-01` (the start of that day in the subscription's time zone) or an RFC 3339 time, from 1 day to 1 year ahead.
+             * @example 2027-02-01
+             */
+            resumeAt?: string;
+        };
+        /** @description The subscription a renewal reminder is about, when it renews, and whether the customer can cover it. */
+        RenewalUpcoming: components["schemas"]["Subscription"] & {
+            /**
+             * Format: date-time
+             * @description When the renewal is charged.
+             * @example 2026-12-13T09:15:00.000Z
+             */
+            renewsAt: string;
+            /**
+             * @description Whether the customer holds the renewal's amount on one chain it can be charged on. Absent when the balances could not be read. Never the balance itself.
+             * @example false
+             */
+            balanceSufficient?: boolean;
+        };
         /** @description Every success response has this shape. The object you asked for is in `response`. */
         SuccessEnvelope: {
             /**
@@ -4337,7 +5332,7 @@ export interface components {
          *       "transactionType": "swap",
          *       "status": "processing",
          *       "transactionId": "7m2n9p4q1r8s5t0u3v6w9x2y",
-         *       "fee": "0.40"
+         *       "fee": "0.4"
          *     }
          */
         Swap: {
@@ -4369,7 +5364,7 @@ export interface components {
             transactionId: string;
             /**
              * @description The fee for the swap. A decimal string in the token's own units.
-             * @example 0.40
+             * @example 0.4
              */
             fee: string;
         };
@@ -4380,12 +5375,12 @@ export interface components {
          *       "transactionType": "swap",
          *       "status": "succeeded",
          *       "transactionId": "7m2n9p4q1r8s5t0u3v6w9x2y",
-         *       "fee": "0.40",
+         *       "fee": "0.4",
          *       "chainId": 8453,
          *       "outputChainId": 8453,
          *       "senderTokenTicker": "USDT",
          *       "receiverTokenTicker": "USDC",
-         *       "amount": "100.00",
+         *       "amount": "100",
          *       "livemode": true
          *     }
          */
@@ -4417,7 +5412,7 @@ export interface components {
             transactionId: string;
             /**
              * @description The fee for the swap. A decimal string in the token's own units.
-             * @example 0.40
+             * @example 0.4
              */
             fee: string;
             /**
@@ -4444,7 +5439,7 @@ export interface components {
             receiverTokenTicker: string;
             /**
              * @description How much of `senderTokenTicker` was swapped. A decimal string in the token's own units.
-             * @example 100.00
+             * @example 100
              */
             amount: string;
             /**
@@ -4473,7 +5468,7 @@ export interface components {
             message: "This is a test event from Paystrater.";
         };
         /**
-         * @description When a schedule runs. Give `startAt` for an exact time, or `startDate` for a day. Leave both out to start one period from now, or set `chargeNow` to pay the first cycle at once.
+         * @description When a schedule runs. Give exactly one of `startAt` (an exact time), `startDate` (a day) and `chargeNow` set to `true` (pay the first cycle at once).
          * @example {
          *       "frequency": "monthly",
          *       "startDate": "2026-11-01",
@@ -4543,7 +5538,7 @@ export interface components {
         TokenWarning: {
             /**
              * Format: int64
-             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. `GET /payment-settings` lists the chains you accept.
+             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia). `GET /payment-settings` lists the chains you accept.
              * @example 8453
              */
             chainId: number;
@@ -4570,7 +5565,7 @@ export interface components {
          *         "transactionType": "incoming_payment",
          *         "method": "transfer_to_pay",
          *         "status": "succeeded",
-         *         "amount": "25.00",
+         *         "amount": "25",
          *         "tokenTicker": "USDC",
          *         "feeBearer": "customer",
          *         "expiresAt": "2026-10-30T09:35:00.000Z",
@@ -4602,7 +5597,7 @@ export interface components {
              */
             status: string;
             /**
-             * @description `true` once `status` can no longer change. A paid payment can still be refunded, but the refund is its own object.
+             * @description `true` once `status` is not one that waits (`requires_action`, `processing` or `pending`). A paid payment can still be refunded, and a `failed` agentic payment or subscription charge can still be paid by a later attempt.
              * @example true
              */
             final: boolean;
@@ -4617,7 +5612,7 @@ export interface components {
          *       "chainId": 8453,
          *       "chainName": "Base",
          *       "tokenTicker": "USDC",
-         *       "amount": "25.00",
+         *       "amount": "25",
          *       "fee": "0.12",
          *       "totalAmount": "25.12",
          *       "expiresAt": "2026-10-30T09:35:00.000Z",
@@ -4632,13 +5627,13 @@ export interface components {
              */
             receivePaymentId: string;
             /**
-             * @description The wallet address the customer sends to. It is only for this payment.
+             * @description The wallet address the customer sends to. It is for this payment only until it expires or is cancelled. The address is then checked once more and released, and can be given to another payment.
              * @example 0x7a3B9c1D2e4F5a6B7c8D9e0F1a2B3c4D5e6F7a8B
              */
             depositAddress: string;
             /**
              * Format: int64
-             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. `GET /payment-settings` lists the chains you accept.
+             * @description The blockchain, by its chain ID. For example `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia). `GET /payment-settings` lists the chains you accept.
              * @example 8453
              */
             chainId: number;
@@ -4654,7 +5649,7 @@ export interface components {
             tokenTicker: string;
             /**
              * @description The price, before the fee. A decimal string in the token's own units.
-             * @example 25.00
+             * @example 25
              */
             amount: string;
             /**
@@ -4669,7 +5664,7 @@ export interface components {
             totalAmount: string;
             /**
              * Format: date-time
-             * @description Send before this time, in ISO 8601 UTC. Money that arrives later is sent back.
+             * @description Send before this time, in ISO 8601 UTC. Just after it, the address is checked one last time before it is released. If the full amount is there, the payment is fulfilled as usual. Once the address is released, nothing can be done about money sent to it, so stop showing the address at this time.
              * @example 2026-10-30T09:35:00.000Z
              */
             expiresAt: string;
@@ -4736,7 +5731,7 @@ export interface components {
          */
         TransferToPayDetails: {
             /**
-             * @description The wallet address the customer sends to. It is only for this payment.
+             * @description The wallet address the customer sends to. It is for this payment only until it expires or is cancelled. The address is then checked once more and released, and can be given to another payment.
              * @example 0x7a3B9c1D2e4F5a6B7c8D9e0F1a2B3c4D5e6F7a8B
              */
             depositAddress: string;
@@ -4752,12 +5747,12 @@ export interface components {
             receivedAmount?: string;
             /**
              * @description Any amount sent over `expectedAmount` that we returned to the customer, less the cost of returning it. A decimal string in the token's own units.
-             * @example 0.50
+             * @example 0.5
              */
             excessRefunded?: string;
             /**
              * Format: date-time
-             * @description When the deposit address stops taking this payment, in ISO 8601 UTC.
+             * @description When the deposit address stops taking this payment, in ISO 8601 UTC. Just after it, the address is checked one last time before it is released. If the full amount is there, the payment is fulfilled as usual. Once the address is released, nothing can be done about money sent to it.
              * @example 2026-10-30T09:35:00.000Z
              */
             depositExpiresAt: string;
@@ -5034,24 +6029,26 @@ export interface components {
          *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
          *
          *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-         * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+         *
+         *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+         * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
          */
         PaystraterSignature: string;
         /**
          * @description The event's `id`, as in the body.
-         * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+         * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
          */
         PaystraterEventId: string;
         /**
          * @description The event's `type`, as in the body.
-         * @example incoming_payment.succeeded
+         * @example webhook.test
          */
         PaystraterEventType: string;
     };
     requestBodies: never;
     headers: {
         /**
-         * @description How many requests the limit allows in its window. Sent only where a limit applies: checkout routes, and secret-key routes in the sandbox.
+         * @description How many requests the limit allows in its window. Sent only where a limit applies: checkout routes and secret-key routes, in production and the sandbox.
          * @example 25
          */
         "RateLimit-Limit": number;
@@ -5061,7 +6058,7 @@ export interface components {
          */
         "RateLimit-Remaining": number;
         /**
-         * @description The length of the limit's window in seconds (1 for the sandbox per-second limits, 60 for checkout). It is the same on every response, not a countdown.
+         * @description The length of the limit's window in seconds (1 for the per-second account limits, 60 for checkout). It is the same on every response, not a countdown.
          * @example 1
          */
         "RateLimit-Reset": number;
@@ -6172,7 +7169,7 @@ export interface operations {
         parameters: {
             query: {
                 /**
-                 * @description The chain to read. `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain.
+                 * @description The chain to read. `8453` is Base, `137` is Polygon and `56` is BNB Smart Chain. In the sandbox, use a test chain such as `84532` (Base Sepolia).
                  * @example 8453
                  */
                 chainId: number;
@@ -7123,6 +8120,16 @@ export interface operations {
                  * @example true
                  */
                 "X-Paystrater-Encrypted"?: components["parameters"]["Encrypted"];
+                /**
+                 * @description Optional. For an encrypted call without a body: your encryption key ID from the dashboard.
+                 * @example 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                 */
+                "X-Paystrater-Key-Id"?: components["parameters"]["EncryptionKeyId"];
+                /**
+                 * @description Optional. For an encrypted call without a body: a fresh secp256k1 public key for this call, hex SEC1. The response is encrypted with the secret it shares with your key.
+                 * @example 02a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90
+                 */
+                "X-Paystrater-Ephemeral-Key"?: components["parameters"]["EphemeralKey"];
             };
             path: {
                 /**
@@ -7133,8 +8140,8 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description JSON, or with `X-Paystrater-Encrypted: true` the same JSON encrypted to your encryption key as an EncryptedRequest. */
-        requestBody: {
+        /** @description Optional. Leave out the body to cancel now. JSON, or with `X-Paystrater-Encrypted: true` the same JSON encrypted to your encryption key as an EncryptedRequest. */
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["CancelInput"] | components["schemas"]["EncryptedRequest"];
             };
@@ -7209,7 +8216,12 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        /** @description Optional. JSON, or with `X-Paystrater-Encrypted: true` the same JSON encrypted to your encryption key as an EncryptedRequest. */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PauseInput"] | components["schemas"]["EncryptedRequest"];
+            };
+        };
         responses: {
             /** @description Subscription paused. To an encrypted request, the whole response comes as an EncryptedResponse. */
             200: {
@@ -7236,6 +8248,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["IdempotencyMismatch"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalError"];
@@ -7307,6 +8320,192 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["IdempotencyMismatch"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    updateSubscription: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Optional. Makes a retry safe. 1 to 255 printable ASCII characters without spaces; anything else gets 400.
+                 *
+                 *     Keys belong to your business, are shared by all its API keys, and are kept for 24 hours. A replay must have the same method, path, query and exact body bytes (for an encrypted call, the JSON encrypted inside). It gets the first response, with `Idempotent-Replayed: true`, and 4xx responses are replayed too. Any other request with the same key gets 422. While the first call is still running, a retry gets 409. A 5xx response frees the key, so a retry with it runs again.
+                 * @example order-10293-payment
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description Optional. `true` encrypts this call: the body is an EncryptedRequest (or, without a body, the key is named in `X-Paystrater-Key-Id` and `X-Paystrater-Ephemeral-Key`), and the success response comes back as an EncryptedResponse. `false`, or leaving it out, sends plain JSON over HTTPS and gets a plain response.
+                 * @example true
+                 */
+                "X-Paystrater-Encrypted"?: components["parameters"]["Encrypted"];
+            };
+            path: {
+                /**
+                 * @description The subscription's ID.
+                 * @example sub_4t7u0v3w6x9y2z5a8b1c4d7e
+                 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description JSON, or with `X-Paystrater-Encrypted: true` the same JSON encrypted to your encryption key as an EncryptedRequest. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSubscriptionInput"] | components["schemas"]["EncryptedRequest"];
+            };
+        };
+        responses: {
+            /** @description Subscription update saved. To an encrypted request, the whole response comes as an EncryptedResponse. */
+            200: {
+                headers: {
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    "Idempotent-Replayed": components["headers"]["Idempotent-Replayed"];
+                    "X-Paystrater-Encrypted": components["headers"]["X-Paystrater-Encrypted"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (Omit<components["schemas"]["SuccessEnvelope"], "response"> & {
+                        /** @example 200 */
+                        status?: unknown;
+                        /** @example Subscription update saved */
+                        message?: unknown;
+                        response?: components["schemas"]["Subscription"];
+                    }) | components["schemas"]["EncryptedResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["IdempotencyMismatch"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listSubscriptionReceipts: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Optional. `true` encrypts this call: the body is an EncryptedRequest (or, without a body, the key is named in `X-Paystrater-Key-Id` and `X-Paystrater-Ephemeral-Key`), and the success response comes back as an EncryptedResponse. `false`, or leaving it out, sends plain JSON over HTTPS and gets a plain response.
+                 * @example true
+                 */
+                "X-Paystrater-Encrypted"?: components["parameters"]["Encrypted"];
+                /**
+                 * @description Optional. For an encrypted call without a body: your encryption key ID from the dashboard.
+                 * @example 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                 */
+                "X-Paystrater-Key-Id"?: components["parameters"]["EncryptionKeyId"];
+                /**
+                 * @description Optional. For an encrypted call without a body: a fresh secp256k1 public key for this call, hex SEC1. The response is encrypted with the secret it shares with your key.
+                 * @example 02a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90
+                 */
+                "X-Paystrater-Ephemeral-Key"?: components["parameters"]["EphemeralKey"];
+            };
+            path: {
+                /**
+                 * @description The subscription's ID.
+                 * @example sub_4t7u0v3w6x9y2z5a8b1c4d7e
+                 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Receipts retrieved. To an encrypted request, the whole response comes as an EncryptedResponse. */
+            200: {
+                headers: {
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    "X-Paystrater-Encrypted": components["headers"]["X-Paystrater-Encrypted"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (Omit<components["schemas"]["SuccessEnvelope"], "response"> & {
+                        /** @example 200 */
+                        status?: unknown;
+                        /** @example Receipts retrieved */
+                        message?: unknown;
+                        response?: components["schemas"]["ReceiptsPage"];
+                    }) | components["schemas"]["EncryptedResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getReceipt: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Optional. `true` encrypts this call: the body is an EncryptedRequest (or, without a body, the key is named in `X-Paystrater-Key-Id` and `X-Paystrater-Ephemeral-Key`), and the success response comes back as an EncryptedResponse. `false`, or leaving it out, sends plain JSON over HTTPS and gets a plain response.
+                 * @example true
+                 */
+                "X-Paystrater-Encrypted"?: components["parameters"]["Encrypted"];
+                /**
+                 * @description Optional. For an encrypted call without a body: your encryption key ID from the dashboard.
+                 * @example 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                 */
+                "X-Paystrater-Key-Id"?: components["parameters"]["EncryptionKeyId"];
+                /**
+                 * @description Optional. For an encrypted call without a body: a fresh secp256k1 public key for this call, hex SEC1. The response is encrypted with the secret it shares with your key.
+                 * @example 02a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90
+                 */
+                "X-Paystrater-Ephemeral-Key"?: components["parameters"]["EphemeralKey"];
+            };
+            path: {
+                /**
+                 * @description The receipt's ID.
+                 * @example rcp_4t7u0v3w6x9y2z5a8b1c4d7e
+                 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Receipt retrieved. To an encrypted request, the whole response comes as an EncryptedResponse. */
+            200: {
+                headers: {
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    "X-Paystrater-Encrypted": components["headers"]["X-Paystrater-Encrypted"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (Omit<components["schemas"]["SuccessEnvelope"], "response"> & {
+                        /** @example 200 */
+                        status?: unknown;
+                        /** @example Receipt retrieved */
+                        message?: unknown;
+                        response?: components["schemas"]["Receipt"];
+                    }) | components["schemas"]["EncryptedResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalError"];
             502: components["responses"]["BadGateway"];
@@ -7488,6 +8687,403 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["IdempotencyMismatch"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    migratePlan: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Optional. Makes a retry safe. 1 to 255 printable ASCII characters without spaces; anything else gets 400.
+                 *
+                 *     Keys belong to your business, are shared by all its API keys, and are kept for 24 hours. A replay must have the same method, path, query and exact body bytes (for an encrypted call, the JSON encrypted inside). It gets the first response, with `Idempotent-Replayed: true`, and 4xx responses are replayed too. Any other request with the same key gets 422. While the first call is still running, a retry gets 409. A 5xx response frees the key, so a retry with it runs again.
+                 * @example order-10293-payment
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description Optional. `true` encrypts this call: the body is an EncryptedRequest (or, without a body, the key is named in `X-Paystrater-Key-Id` and `X-Paystrater-Ephemeral-Key`), and the success response comes back as an EncryptedResponse. `false`, or leaving it out, sends plain JSON over HTTPS and gets a plain response.
+                 * @example true
+                 */
+                "X-Paystrater-Encrypted"?: components["parameters"]["Encrypted"];
+                /**
+                 * @description Optional. For an encrypted call without a body: your encryption key ID from the dashboard.
+                 * @example 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                 */
+                "X-Paystrater-Key-Id"?: components["parameters"]["EncryptionKeyId"];
+                /**
+                 * @description Optional. For an encrypted call without a body: a fresh secp256k1 public key for this call, hex SEC1. The response is encrypted with the secret it shares with your key.
+                 * @example 02a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90
+                 */
+                "X-Paystrater-Ephemeral-Key"?: components["parameters"]["EphemeralKey"];
+            };
+            path: {
+                /**
+                 * @description The plan's ID.
+                 * @example plan_6g9h2j5k8l1m4n7p0q3r6s9t
+                 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description JSON, or with `X-Paystrater-Encrypted: true` the same JSON encrypted to your encryption key as an EncryptedRequest. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigratePlanInput"] | components["schemas"]["EncryptedRequest"];
+            };
+        };
+        responses: {
+            /** @description Plan migration started. To an encrypted request, the whole response comes as an EncryptedResponse. */
+            202: {
+                headers: {
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    "Idempotent-Replayed": components["headers"]["Idempotent-Replayed"];
+                    "X-Paystrater-Encrypted": components["headers"]["X-Paystrater-Encrypted"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (Omit<components["schemas"]["SuccessEnvelope"], "response"> & {
+                        /** @example 202 */
+                        status?: unknown;
+                        /** @example Plan migration started */
+                        message?: unknown;
+                        response?: components["schemas"]["PlanMigration"];
+                    }) | components["schemas"]["EncryptedResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["IdempotencyMismatch"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getPlanMigration: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Optional. `true` encrypts this call: the body is an EncryptedRequest (or, without a body, the key is named in `X-Paystrater-Key-Id` and `X-Paystrater-Ephemeral-Key`), and the success response comes back as an EncryptedResponse. `false`, or leaving it out, sends plain JSON over HTTPS and gets a plain response.
+                 * @example true
+                 */
+                "X-Paystrater-Encrypted"?: components["parameters"]["Encrypted"];
+                /**
+                 * @description Optional. For an encrypted call without a body: your encryption key ID from the dashboard.
+                 * @example 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                 */
+                "X-Paystrater-Key-Id"?: components["parameters"]["EncryptionKeyId"];
+                /**
+                 * @description Optional. For an encrypted call without a body: a fresh secp256k1 public key for this call, hex SEC1. The response is encrypted with the secret it shares with your key.
+                 * @example 02a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90
+                 */
+                "X-Paystrater-Ephemeral-Key"?: components["parameters"]["EphemeralKey"];
+            };
+            path: {
+                /**
+                 * @description The plan the migration moves subscribers from.
+                 * @example plan_6g9h2j5k8l1m4n7p0q3r6s9t
+                 */
+                id: string;
+                /**
+                 * @description The migration's ID.
+                 * @example mig_4t7u0v3w6x9y2z5a8b1c4d7e
+                 */
+                migrationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Plan migration retrieved. To an encrypted request, the whole response comes as an EncryptedResponse. */
+            200: {
+                headers: {
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    "X-Paystrater-Encrypted": components["headers"]["X-Paystrater-Encrypted"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (Omit<components["schemas"]["SuccessEnvelope"], "response"> & {
+                        /** @example 200 */
+                        status?: unknown;
+                        /** @example Plan migration retrieved */
+                        message?: unknown;
+                        response?: components["schemas"]["PlanMigration"];
+                    }) | components["schemas"]["EncryptedResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createTestClock: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Optional. Makes a retry safe. 1 to 255 printable ASCII characters without spaces; anything else gets 400.
+                 *
+                 *     Keys belong to your business, are shared by all its API keys, and are kept for 24 hours. A replay must have the same method, path, query and exact body bytes (for an encrypted call, the JSON encrypted inside). It gets the first response, with `Idempotent-Replayed: true`, and 4xx responses are replayed too. Any other request with the same key gets 422. While the first call is still running, a retry gets 409. A 5xx response frees the key, so a retry with it runs again.
+                 * @example order-10293-payment
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description Optional. `true` encrypts this call: the body is an EncryptedRequest (or, without a body, the key is named in `X-Paystrater-Key-Id` and `X-Paystrater-Ephemeral-Key`), and the success response comes back as an EncryptedResponse. `false`, or leaving it out, sends plain JSON over HTTPS and gets a plain response.
+                 * @example true
+                 */
+                "X-Paystrater-Encrypted"?: components["parameters"]["Encrypted"];
+                /**
+                 * @description Optional. For an encrypted call without a body: your encryption key ID from the dashboard.
+                 * @example 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                 */
+                "X-Paystrater-Key-Id"?: components["parameters"]["EncryptionKeyId"];
+                /**
+                 * @description Optional. For an encrypted call without a body: a fresh secp256k1 public key for this call, hex SEC1. The response is encrypted with the secret it shares with your key.
+                 * @example 02a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90
+                 */
+                "X-Paystrater-Ephemeral-Key"?: components["parameters"]["EphemeralKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Optional. Leave out the body to start at the current time. JSON, or with `X-Paystrater-Encrypted: true` the same JSON encrypted to your encryption key as an EncryptedRequest. */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateTestClockInput"] | components["schemas"]["EncryptedRequest"];
+            };
+        };
+        responses: {
+            /** @description Test clock created. To an encrypted request, the whole response comes as an EncryptedResponse. */
+            201: {
+                headers: {
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    "Idempotent-Replayed": components["headers"]["Idempotent-Replayed"];
+                    "X-Paystrater-Encrypted": components["headers"]["X-Paystrater-Encrypted"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (Omit<components["schemas"]["SuccessEnvelope"], "response"> & {
+                        /** @example 201 */
+                        status?: unknown;
+                        /** @example Test clock created */
+                        message?: unknown;
+                        response?: components["schemas"]["TestClock"];
+                    }) | components["schemas"]["EncryptedResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["IdempotencyMismatch"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getTestClock: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Optional. `true` encrypts this call: the body is an EncryptedRequest (or, without a body, the key is named in `X-Paystrater-Key-Id` and `X-Paystrater-Ephemeral-Key`), and the success response comes back as an EncryptedResponse. `false`, or leaving it out, sends plain JSON over HTTPS and gets a plain response.
+                 * @example true
+                 */
+                "X-Paystrater-Encrypted"?: components["parameters"]["Encrypted"];
+                /**
+                 * @description Optional. For an encrypted call without a body: your encryption key ID from the dashboard.
+                 * @example 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                 */
+                "X-Paystrater-Key-Id"?: components["parameters"]["EncryptionKeyId"];
+                /**
+                 * @description Optional. For an encrypted call without a body: a fresh secp256k1 public key for this call, hex SEC1. The response is encrypted with the secret it shares with your key.
+                 * @example 02a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90
+                 */
+                "X-Paystrater-Ephemeral-Key"?: components["parameters"]["EphemeralKey"];
+            };
+            path: {
+                /**
+                 * @description The test clock's ID.
+                 * @example clk_4t7u0v3w6x9y2z5a8b1c4d7e
+                 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Test clock retrieved. To an encrypted request, the whole response comes as an EncryptedResponse. */
+            200: {
+                headers: {
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    "X-Paystrater-Encrypted": components["headers"]["X-Paystrater-Encrypted"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (Omit<components["schemas"]["SuccessEnvelope"], "response"> & {
+                        /** @example 200 */
+                        status?: unknown;
+                        /** @example Test clock retrieved */
+                        message?: unknown;
+                        response?: components["schemas"]["TestClock"];
+                    }) | components["schemas"]["EncryptedResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteTestClock: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Optional. `true` encrypts this call: the body is an EncryptedRequest (or, without a body, the key is named in `X-Paystrater-Key-Id` and `X-Paystrater-Ephemeral-Key`), and the success response comes back as an EncryptedResponse. `false`, or leaving it out, sends plain JSON over HTTPS and gets a plain response.
+                 * @example true
+                 */
+                "X-Paystrater-Encrypted"?: components["parameters"]["Encrypted"];
+                /**
+                 * @description Optional. For an encrypted call without a body: your encryption key ID from the dashboard.
+                 * @example 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                 */
+                "X-Paystrater-Key-Id"?: components["parameters"]["EncryptionKeyId"];
+                /**
+                 * @description Optional. For an encrypted call without a body: a fresh secp256k1 public key for this call, hex SEC1. The response is encrypted with the secret it shares with your key.
+                 * @example 02a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90
+                 */
+                "X-Paystrater-Ephemeral-Key"?: components["parameters"]["EphemeralKey"];
+            };
+            path: {
+                /**
+                 * @description The test clock's ID.
+                 * @example clk_4t7u0v3w6x9y2z5a8b1c4d7e
+                 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Test clock deleted. To an encrypted request, the whole response comes as an EncryptedResponse. */
+            200: {
+                headers: {
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    "X-Paystrater-Encrypted": components["headers"]["X-Paystrater-Encrypted"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (Omit<components["schemas"]["SuccessEnvelope"], "response"> & {
+                        /** @example 200 */
+                        status?: unknown;
+                        /** @example Test clock deleted */
+                        message?: unknown;
+                        response?: components["schemas"]["TestClock"];
+                    }) | components["schemas"]["EncryptedResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    advanceTestClock: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Optional. Makes a retry safe. 1 to 255 printable ASCII characters without spaces; anything else gets 400.
+                 *
+                 *     Keys belong to your business, are shared by all its API keys, and are kept for 24 hours. A replay must have the same method, path, query and exact body bytes (for an encrypted call, the JSON encrypted inside). It gets the first response, with `Idempotent-Replayed: true`, and 4xx responses are replayed too. Any other request with the same key gets 422. While the first call is still running, a retry gets 409. A 5xx response frees the key, so a retry with it runs again.
+                 * @example order-10293-payment
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description Optional. `true` encrypts this call: the body is an EncryptedRequest (or, without a body, the key is named in `X-Paystrater-Key-Id` and `X-Paystrater-Ephemeral-Key`), and the success response comes back as an EncryptedResponse. `false`, or leaving it out, sends plain JSON over HTTPS and gets a plain response.
+                 * @example true
+                 */
+                "X-Paystrater-Encrypted"?: components["parameters"]["Encrypted"];
+            };
+            path: {
+                /**
+                 * @description The test clock's ID.
+                 * @example clk_4t7u0v3w6x9y2z5a8b1c4d7e
+                 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description JSON, or with `X-Paystrater-Encrypted: true` the same JSON encrypted to your encryption key as an EncryptedRequest. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdvanceTestClockInput"] | components["schemas"]["EncryptedRequest"];
+            };
+        };
+        responses: {
+            /** @description Test clock advanced. To an encrypted request, the whole response comes as an EncryptedResponse. */
+            200: {
+                headers: {
+                    "RateLimit-Limit": components["headers"]["RateLimit-Limit"];
+                    "RateLimit-Remaining": components["headers"]["RateLimit-Remaining"];
+                    "RateLimit-Reset": components["headers"]["RateLimit-Reset"];
+                    "Idempotent-Replayed": components["headers"]["Idempotent-Replayed"];
+                    "X-Paystrater-Encrypted": components["headers"]["X-Paystrater-Encrypted"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (Omit<components["schemas"]["SuccessEnvelope"], "response"> & {
+                        /** @example 200 */
+                        status?: unknown;
+                        /** @example Test clock advanced */
+                        message?: unknown;
+                        response?: components["schemas"]["TestClock"];
+                    }) | components["schemas"]["EncryptedResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
             422: components["responses"]["IdempotencyMismatch"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["InternalError"];
@@ -7698,17 +9294,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -7751,17 +9349,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -7804,17 +9404,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -7857,17 +9459,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -7910,17 +9514,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -7963,17 +9569,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8016,17 +9624,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8069,17 +9679,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8122,17 +9734,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8175,17 +9789,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8228,17 +9844,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8281,17 +9899,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8334,17 +9954,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8387,17 +10009,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8440,17 +10064,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8493,17 +10119,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8546,17 +10174,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8589,6 +10219,281 @@ export interface operations {
             };
         };
     };
+    subscriptionUpdated: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`. `v1` is the lowercase hex HMAC-SHA256 of `t`, a dot, then the raw body bytes. The key is your whole endpoint secret as UTF-8 bytes, `whsec_` prefix included: don't strip or decode it.
+                 *
+                 *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
+                 *
+                 *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
+                 */
+                "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
+                /**
+                 * @description The event's `id`, as in the body.
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
+                 */
+                "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
+                /**
+                 * @description The event's `type`, as in the body.
+                 * @example webhook.test
+                 */
+                "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Event"] & {
+                    /** @constant */
+                    type?: "subscription.updated";
+                    data?: components["schemas"]["Subscription"];
+                };
+            };
+        };
+        responses: {
+            /** @description Received. Respond within 10 seconds. */
+            "2XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Anything else is retried: any other status (redirects aren't followed), no response within 10 seconds, or a failed connection. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subscriptionRenewalUpcoming: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`. `v1` is the lowercase hex HMAC-SHA256 of `t`, a dot, then the raw body bytes. The key is your whole endpoint secret as UTF-8 bytes, `whsec_` prefix included: don't strip or decode it.
+                 *
+                 *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
+                 *
+                 *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
+                 */
+                "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
+                /**
+                 * @description The event's `id`, as in the body.
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
+                 */
+                "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
+                /**
+                 * @description The event's `type`, as in the body.
+                 * @example webhook.test
+                 */
+                "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Event"] & {
+                    /** @constant */
+                    type?: "subscription.renewal_upcoming";
+                    data?: components["schemas"]["RenewalUpcoming"];
+                };
+            };
+        };
+        responses: {
+            /** @description Received. Respond within 10 seconds. */
+            "2XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Anything else is retried: any other status (redirects aren't followed), no response within 10 seconds, or a failed connection. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subscriptionPaused: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`. `v1` is the lowercase hex HMAC-SHA256 of `t`, a dot, then the raw body bytes. The key is your whole endpoint secret as UTF-8 bytes, `whsec_` prefix included: don't strip or decode it.
+                 *
+                 *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
+                 *
+                 *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
+                 */
+                "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
+                /**
+                 * @description The event's `id`, as in the body.
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
+                 */
+                "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
+                /**
+                 * @description The event's `type`, as in the body.
+                 * @example webhook.test
+                 */
+                "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Event"] & {
+                    /** @constant */
+                    type?: "subscription.paused";
+                    data?: components["schemas"]["Subscription"];
+                };
+            };
+        };
+        responses: {
+            /** @description Received. Respond within 10 seconds. */
+            "2XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Anything else is retried: any other status (redirects aren't followed), no response within 10 seconds, or a failed connection. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subscriptionResumed: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`. `v1` is the lowercase hex HMAC-SHA256 of `t`, a dot, then the raw body bytes. The key is your whole endpoint secret as UTF-8 bytes, `whsec_` prefix included: don't strip or decode it.
+                 *
+                 *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
+                 *
+                 *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
+                 */
+                "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
+                /**
+                 * @description The event's `id`, as in the body.
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
+                 */
+                "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
+                /**
+                 * @description The event's `type`, as in the body.
+                 * @example webhook.test
+                 */
+                "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Event"] & {
+                    /** @constant */
+                    type?: "subscription.resumed";
+                    data?: components["schemas"]["Subscription"];
+                };
+            };
+        };
+        responses: {
+            /** @description Received. Respond within 10 seconds. */
+            "2XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Anything else is retried: any other status (redirects aren't followed), no response within 10 seconds, or a failed connection. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    planMigrationCompleted: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`. `v1` is the lowercase hex HMAC-SHA256 of `t`, a dot, then the raw body bytes. The key is your whole endpoint secret as UTF-8 bytes, `whsec_` prefix included: don't strip or decode it.
+                 *
+                 *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
+                 *
+                 *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
+                 */
+                "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
+                /**
+                 * @description The event's `id`, as in the body.
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
+                 */
+                "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
+                /**
+                 * @description The event's `type`, as in the body.
+                 * @example webhook.test
+                 */
+                "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Event"] & {
+                    /** @constant */
+                    type?: "plan.migration_completed";
+                    data?: components["schemas"]["PlanMigration"];
+                };
+            };
+        };
+        responses: {
+            /** @description Received. Respond within 10 seconds. */
+            "2XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Anything else is retried: any other status (redirects aren't followed), no response within 10 seconds, or a failed connection. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     scheduledPaymentRunSucceeded: {
         parameters: {
             query?: never;
@@ -8599,17 +10504,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8652,17 +10559,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8705,17 +10614,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };
@@ -8758,17 +10669,19 @@ export interface operations {
                  *     For 24 hours after you rotate the secret there is a second `v1`, made with the old secret, newest first, so accept a match on any `v1`. Refuse a `t` more than 5 minutes old.
                  *
                  *     Verify the raw bytes before you parse them, and never re-serialise them to check the signature.
-                 * @example t=1761815922,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+                 *
+                 *     The example signs this body, byte for byte with no newline at the end, with the sample secret `whsec_docs_example`: `{"id":"evt_9b2e7d1c4a6f8e0b3d5c7a9e","type":"webhook.test","createdAt":"2026-10-30T09:20:00.000Z","livemode":false,"data":{"message":"This is a test event from Paystrater."}}`
+                 * @example t=1793352000,v1=cd17ce1849b474e32b4147057bd073b2114e9ebbeb8760f20347cdc8f2b654d0
                  */
                 "Paystrater-Signature": components["parameters"]["PaystraterSignature"];
                 /**
                  * @description The event's `id`, as in the body.
-                 * @example evt_4f9a1c7e2b8d3f6a0c5e9b1d
+                 * @example evt_9b2e7d1c4a6f8e0b3d5c7a9e
                  */
                 "Paystrater-Event-Id": components["parameters"]["PaystraterEventId"];
                 /**
                  * @description The event's `type`, as in the body.
-                 * @example incoming_payment.succeeded
+                 * @example webhook.test
                  */
                 "Paystrater-Event-Type": components["parameters"]["PaystraterEventType"];
             };

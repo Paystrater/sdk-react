@@ -58,6 +58,24 @@ describe("<PaystraterCheckout>", () => {
     expect(net.calls).toHaveLength(0)
   })
 
+  it("server-renders its CSS as written, with the nonce, and hydrates without a mismatch", async () => {
+    serve(() => ok(payment()))
+    const checkout = <PaystraterCheckout paymentId={ID} publishableKey={PK_TEST} nonce="abc" />
+    const html = renderToString(checkout)
+    const style = /<style nonce="abc">([\s\S]*?)<\/style>/.exec(html)?.[1]
+    expect(style).toContain(".ps-method-text>span{")
+    expect(style).not.toMatch(/&(gt|quot|amp|#x27);/)
+    const container = document.createElement("div")
+    document.body.append(container)
+    container.innerHTML = html
+    const recovered = vi.fn()
+    const { unmount } = render(checkout, { container, hydrate: true, onRecoverableError: recovered })
+    expect(await screen.findByText("Acme Shoes")).toBeTruthy()
+    expect(recovered).not.toHaveBeenCalled()
+    unmount()
+    container.remove()
+  })
+
   it("shows the error and Try again when the first read fails, not an endless skeleton", async () => {
     serve(() => {
       throw new TypeError("Failed to fetch")
@@ -232,8 +250,8 @@ describe("<PaystraterCheckout>", () => {
   it.each([
     [lockedTtp({ status: "succeeded", transferToPay: { ...lockedTtp().transferToPay!, excessRefunded: "0.75" } }), "Payment complete", /the extra 0.75 USDC was returned/],
     [lockedTtp({ status: "expired", transferToPay: { ...lockedTtp().transferToPay!, receivedAmount: "10" } }), "You sent less than the amount", /emailed you a link/],
-    [lockedTtp({ status: "expired", transferToPay: { ...lockedTtp().transferToPay!, receivedAmount: "25.25" } }), "Your transfer arrived after the payment expired", /emailed you a link/],
-    [lockedTtp({ status: "expired" }), "This payment has expired", /Nothing arrived in time/],
+    [lockedTtp({ status: "expired" }), "This payment has expired", /Don't send money to this address any more/],
+    [payment({ status: "expired", method: "pay_with_paystrater" }), "This payment has expired", /Nothing arrived in time/],
     [payment({ status: "cancelled" }), "This payment was cancelled", /Acme Shoes cancelled it/],
     [payment({ status: "processing" }), "Payment received", /under a minute/],
     [payment({ status: "failed", failureReason: "The transfer reverted" }), "This payment didn't go through", /The transfer reverted/]

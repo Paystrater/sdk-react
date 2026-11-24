@@ -42,7 +42,7 @@ export function Pay({ paymentId }: { paymentId: string }) {
     <PaystraterCheckout
       paymentId={paymentId}
       publishableKey="pk_live_…"
-      onSuccess={() => router.push("/thanks")}
+      onSuccess={() => window.location.assign("/thanks")}
     />
   )
 }
@@ -55,7 +55,7 @@ export function Pay({ paymentId }: { paymentId: string }) {
 The payment's own settings decide which methods the customer sees.
 
 - **Pay with Paystrater:** the customer types their Paystrater ID or username and approves the request in the Paystrater app with their PIN. The checkout follows the payment and shows the result.
-- **Transfer to Pay:** the customer picks a network; email, name and a refund address are optional. The checkout shows the exact amount, the deposit address with a QR code and copy buttons, and a countdown. A transfer that is short or late is handled for them: they get an email with a link to get their funds back.
+- **Transfer to Pay:** the customer picks a network; email, name and a refund address are optional. The checkout shows the exact amount, the deposit address with a QR code and copy buttons, and a countdown. A transfer that is short when the payment expires is handled for them: they get an email with a link to get their funds back. After it expires, the checkout tells them not to send money to the address any more: money in the address is checked once, when it is released, and completes the payment if it covers the amount. Money sent after that cannot be credited or returned.
 - **AI agent payments:** the checkout gives the customer a prompt for their AI agent. The agent pays through Paystrater within the limits the customer set, and the checkout shows the result.
 
 Which tokens a customer can pay in comes from your payment settings in the dashboard: stablecoins (USDC, USDT, USDT0, PYUSD, EURC, USDG, cNGN) and coins (ETH, BNB, SOL, HYPE, WETH), each on the networks that carry it. Transfer to Pay is not available on Solana yet, so SOL and Solana tokens are paid with Pay with Paystrater.
@@ -147,7 +147,7 @@ To send customers to a page instead of embedding the component, create the payme
 If you turned on an encryption key in the dashboard (Developers → Encryption), pass its key ID and public key. Both are public values:
 
 ```tsx
-<PaystraterCheckout encryption={{ keyId: "AbCdEf0123456789", publicKey: "04…" }} … />
+<PaystraterCheckout encryption={{ keyId: "7c9e6679-7425-40de-944b-e07fc1f90ae7", publicKey: "04…" }} … />
 ```
 
 Every call is then encrypted to your key (secp256k1, HKDF-SHA256, AES-256-GCM, a new one-time key per call) and every response decrypted. The code for it is a separate chunk that only loads when you pass `encryption`. Pass both values or neither: half a setup, or a malformed key, stops the checkout instead of falling back to plain JSON.
@@ -186,12 +186,12 @@ The checkout needs very little from your policy: no `eval`, no inline or remote 
 | `connect-src` | `https://api.paystrater.com` (live keys), `https://staging-api.paystrater.com` (test keys) | Every call goes to the API host your key picks, or to `apiBaseUrl` if you set it |
 | `style-src` | `'nonce-…'` (and pass the same value as the `nonce` prop), or `'unsafe-inline'` | The checkout renders one `<style>` element |
 | `style-src-attr` | `'unsafe-inline'`, only if you server-render the checkout under a nonce-only `style-src` | Theme colours are inline `style` attributes. In the browser React sets them through the DOM, which a policy allows; in server-rendered HTML they are attributes that a nonce-only `style-src` blocks |
-| `img-src` | `https:`, or your merchant logo's host | The business logo is an `<img>`. The QR code, icons and Paystrater logo are inline SVG and need nothing |
+| `img-src` | `https:` | Your logo, which can be on any `https` host. For a logo you uploaded to Paystrater, `https://service.paystrater.com` (live) and `https://staging.paystrater.com` (test) are enough today. Without a logo, or if it is blocked, the checkout shows your initials. The QR code, icons and Paystrater logo are inline SVG and need nothing |
 | `script-src` | Your own bundle, as now | The encryption code is a separate chunk of your bundle, loaded with `import()` only when you pass `encryption` |
 
 Links (Powered by Paystrater, Open the Paystrater app, Open in wallet) are plain links and need no policy.
 
-A policy that works with the checkout, for test keys (add `https://api.paystrater.com` to `connect-src` for live keys):
+A policy that works with the checkout, for test keys (for live keys, add `https://api.paystrater.com` to `connect-src`):
 
 ```
 Content-Security-Policy:
@@ -209,7 +209,7 @@ Content-Security-Policy:
 
 `style-src-attr 'unsafe-inline'` is only needed when the checkout is server-rendered (Next.js and other SSR frameworks) under a nonce-only `style-src`. If your `style-src` already has `'unsafe-inline'`, as many Next.js apps do, add nothing for styles.
 
-In Next.js, set the header in `proxy.ts` (`middleware.ts` before Next.js 16) and pass the nonce to the component:
+In Next.js, set the header in `proxy.ts` (`middleware.ts` before Next.js 16, exporting `middleware`). Set it on the request too: Next.js reads the nonce for its own scripts from there, and without it the browser blocks them and the checkout stays on its placeholder.
 
 ```ts
 // proxy.ts
@@ -217,9 +217,11 @@ import { NextRequest, NextResponse } from "next/server"
 
 export function proxy(request: NextRequest) {
   const nonce = crypto.randomUUID()
+  const dev = process.env.NODE_ENV === "development"
   const policy = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    // React needs 'unsafe-eval' in development only
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
     `style-src 'self' 'nonce-${nonce}'`,
     "style-src-attr 'unsafe-inline'",
     "connect-src 'self' https://api.paystrater.com https://staging-api.paystrater.com",
@@ -231,28 +233,60 @@ export function proxy(request: NextRequest) {
   ].join("; ")
   const headers = new Headers(request.headers)
   headers.set("x-nonce", nonce)
+  headers.set("Content-Security-Policy", policy) // Next.js reads the nonce from the request
   const response = NextResponse.next({ request: { headers } })
   response.headers.set("Content-Security-Policy", policy)
   return response
 }
+
+export const config = {
+  matcher: [
+    {
+      source: "/((?!api|_next/static|_next/image|favicon.ico).*)",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" }
+      ]
+    }
+  ]
+}
 ```
 
 ```tsx
-// In a server component: read the nonce and hand it to the checkout
+// app/pay/[paymentId]/page.tsx, a server component. Reading headers() makes the page dynamic, which a nonce needs
 import { headers } from "next/headers"
+import { Checkout } from "./Checkout"
 
-const nonce = (await headers()).get("x-nonce") ?? undefined
-return <Checkout paymentId={paymentId} nonce={nonce} />
-// …and in the client component: <PaystraterCheckout paymentId={paymentId} publishableKey="pk_live_…" nonce={nonce} />
+export default async function PayPage({ params }: { params: Promise<{ paymentId: string }> }) {
+  const { paymentId } = await params
+  const nonce = (await headers()).get("x-nonce") ?? undefined
+  return <Checkout paymentId={paymentId} nonce={nonce} />
+}
+```
+
+```tsx
+// app/pay/[paymentId]/Checkout.tsx
+"use client"
+
+import { PaystraterCheckout } from "@paystrater/react"
+
+export function Checkout({ paymentId, nonce }: { paymentId: string; nonce?: string }) {
+  return <PaystraterCheckout paymentId={paymentId} publishableKey="pk_live_…" nonce={nonce} />
+}
 ```
 
 ## Server rendering
 
-On the server the component renders a placeholder and calls nothing; work starts in the browser. It is marked `"use client"` for React Server Components.
+`@paystrater/react` is marked `"use client"`, so a server component can render it, and it is safe to render on the server. Functions cannot be passed from a server component to a client one, so put the checkout in a client component of your own when you use callbacks such as `onSuccess`.
+
+- **On the server** it renders a placeholder, with its styles, and calls nothing. It does not read the payment, so there is nothing to fetch or pass down besides the payment's ID.
+- **In the browser** it takes over the placeholder and reads the payment. Every call comes from the customer's browser, where your site's origin is checked against the key's sites, so do not call the checkout routes from your server.
+- **Dark mode:** the server does not know the device's theme, so with `theme: "auto"` the placeholder is light until the browser takes over. If your site knows the theme on the server, pass it as `theme`.
+- **Content Security Policy:** server-rendered theme colours are `style` attributes. See [Content Security Policy](#content-security-policy).
 
 ## Size
 
-Under 20 KB gzipped for the whole checkout, with the encryption code (about 4 KB) in its own chunk. Checked in CI.
+About 21 KB gzipped for the whole checkout, with the encryption code (about 3.5 KB) in its own chunk that only loads when you pass `encryption`. The limit is 22 KB. Checked in CI.
 
 ## Links
 

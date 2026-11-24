@@ -51,8 +51,7 @@ const SERVER_STATE: CheckoutState = {
   chains: [],
   busy: false,
   slowed: false,
-  underpaid: false,
-  late: false
+  underpaid: false
 }
 
 export function usePaystraterPayment(paymentId: string, options: PaystraterPaymentOptions): PaystraterPayment {
